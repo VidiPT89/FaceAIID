@@ -36,6 +36,8 @@ export default function CameraFeed() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [gesture, setGesture] = useState<HandGesture>("none");
+  const [handsDetected, setHandsDetected] = useState(0);
+  const [loopError, setLoopError] = useState<string | null>(null);
 
   const stop = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -67,41 +69,54 @@ export default function CameraFeed() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    const result = landmarker.detectForVideo(video, performance.now());
+    // Critical: without this try/catch, a single thrown error from
+    // detectForVideo (or anything below it) kills the requestAnimationFrame
+    // loop for good — the camera keeps showing a live picture, looking
+    // "on", but detection silently stops forever with no visible error.
+    // That's indistinguishable from "the model just doesn't work" from the
+    // user's side, so every frame is now isolated and logged instead.
+    try {
+      const result = landmarker.detectForVideo(video, performance.now());
 
-    ctx.save();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
 
-    let detected: HandGesture = "none";
+      let detected: HandGesture = "none";
 
-    if (result.landmarks && result.landmarks.length > 0) {
-      for (const landmarks of result.landmarks) {
-        ctx.strokeStyle = "#ffb703";
-        ctx.lineWidth = 3;
-        for (const [a, b] of CONNECTIONS) {
-          const pa = landmarks[a];
-          const pb = landmarks[b];
-          ctx.beginPath();
-          ctx.moveTo(pa.x * canvas.width, pa.y * canvas.height);
-          ctx.lineTo(pb.x * canvas.width, pb.y * canvas.height);
-          ctx.stroke();
+      if (result.landmarks && result.landmarks.length > 0) {
+        for (const landmarks of result.landmarks) {
+          ctx.strokeStyle = "#ffb703";
+          ctx.lineWidth = 3;
+          for (const [a, b] of CONNECTIONS) {
+            const pa = landmarks[a];
+            const pb = landmarks[b];
+            ctx.beginPath();
+            ctx.moveTo(pa.x * canvas.width, pa.y * canvas.height);
+            ctx.lineTo(pb.x * canvas.width, pb.y * canvas.height);
+            ctx.stroke();
+          }
+          ctx.fillStyle = "#ff7a1a";
+          for (const point of landmarks) {
+            ctx.beginPath();
+            ctx.arc(point.x * canvas.width, point.y * canvas.height, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          const classification = classifyHandGesture(landmarks);
+          if (classification !== "none") detected = classification;
         }
-        ctx.fillStyle = "#ff7a1a";
-        for (const point of landmarks) {
-          ctx.beginPath();
-          ctx.arc(point.x * canvas.width, point.y * canvas.height, 4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        const classification = classifyHandGesture(landmarks);
-        if (classification !== "none") detected = classification;
       }
-    }
 
-    ctx.restore();
-    setGesture(detected);
+      ctx.restore();
+      setGesture(detected);
+      setHandsDetected(result.landmarks?.length ?? 0);
+      setLoopError(null);
+    } catch (err) {
+      console.error("[FaceAIID] hand detection frame failed", err);
+      setLoopError(err instanceof Error ? err.message : String(err));
+    }
 
     rafRef.current = requestAnimationFrame(() => detectLoopRef.current());
   }, []);
@@ -178,6 +193,12 @@ export default function CameraFeed() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {status === "running" && (
+          <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono text-white/90">
+            {loopError ? `error: ${loopError}` : `hands: ${handsDetected}`}
+          </div>
+        )}
       </div>
 
       <motion.button

@@ -65,6 +65,9 @@ export default function FaceIdCameraFeed() {
           setMatch(null);
         }
       })
+      .catch((err) => {
+        console.error("[FaceAIID] face identification frame failed", err);
+      })
       .finally(() => {
         busyRef.current = false;
         rafRef.current = requestAnimationFrame(() => loopRef.current());

@@ -44,6 +44,8 @@ export default function FaceCameraFeed() {
   const [status, setStatus] = useState<Status>("idle");
   const [expression, setExpression] = useState<FacialExpression>("none");
   const [headMovement, setHeadMovement] = useState<HeadMovement>("none");
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [loopError, setLoopError] = useState<string | null>(null);
 
   const stop = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -73,37 +75,49 @@ export default function FaceCameraFeed() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    const result = landmarker.detectForVideo(video, performance.now());
+    // See the matching comment in CameraFeed.tsx: an uncaught error here
+    // would otherwise kill the detection loop for good while the camera
+    // keeps looking "on".
+    try {
+      const result = landmarker.detectForVideo(video, performance.now());
 
-    ctx.save();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
 
-    if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-      const landmarks = result.faceLandmarks[0];
-      ctx.strokeStyle = "#ffb703";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      FACE_OVAL.forEach((index, i) => {
-        const point = landmarks[index];
-        const x = point.x * canvas.width;
-        const y = point.y * canvas.height;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-    }
+      const hasFace = !!(result.faceLandmarks && result.faceLandmarks.length > 0);
 
-    ctx.restore();
+      if (hasFace) {
+        const landmarks = result.faceLandmarks[0];
+        ctx.strokeStyle = "#ffb703";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        FACE_OVAL.forEach((index, i) => {
+          const point = landmarks[index];
+          const x = point.x * canvas.width;
+          const y = point.y * canvas.height;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
 
-    const blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
-    setExpression(classifyFacialExpression(blendshapes));
+      ctx.restore();
+      setFaceDetected(hasFace);
 
-    const matrix = result.facialTransformationMatrixes?.[0]?.data;
-    if (matrix) {
-      const euler = matrixToEuler(Array.from(matrix));
-      setHeadMovement(trackerRef.current.push(euler));
+      const blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
+      setExpression(classifyFacialExpression(blendshapes));
+
+      const matrix = result.facialTransformationMatrixes?.[0]?.data;
+      if (matrix) {
+        const euler = matrixToEuler(Array.from(matrix));
+        setHeadMovement(trackerRef.current.push(euler));
+      }
+      setLoopError(null);
+    } catch (err) {
+      console.error("[FaceAIID] face detection frame failed", err);
+      setLoopError(err instanceof Error ? err.message : String(err));
     }
 
     rafRef.current = requestAnimationFrame(() => loopRef.current());
@@ -187,6 +201,12 @@ export default function FaceCameraFeed() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {status === "running" && (
+          <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono text-white/90">
+            {loopError ? `error: ${loopError}` : `face: ${faceDetected ? "yes" : "no"}`}
+          </div>
+        )}
       </div>
 
       <motion.button
