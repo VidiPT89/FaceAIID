@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/lib/i18n";
 import { getFaceLandmarker } from "@/lib/mediapipe/faceLandmarker";
-import { classifyFacialExpression, computeExpressionScores, type ExpressionScores, type FacialExpression } from "@/lib/gestures/facialExpressions";
+import { ExpressionBaselineTracker, computeExpressionScores, type ExpressionScores, type FacialExpression } from "@/lib/gestures/facialExpressions";
 import { HeadMovementTracker, matrixToEuler, type HeadMovement } from "@/lib/gestures/headMovement";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
@@ -40,6 +40,7 @@ export default function FaceCameraFeed() {
   const drawingUtilsRef = useRef<import("@mediapipe/tasks-vision").DrawingUtils | null>(null);
   const connectionsRef = useRef<FaceConnectionSets | null>(null);
   const trackerRef = useRef(new HeadMovementTracker());
+  const expressionTrackerRef = useRef(new ExpressionBaselineTracker());
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const loopRef = useRef<() => void>(() => {});
@@ -57,6 +58,7 @@ export default function FaceCameraFeed() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     trackerRef.current.reset();
+    expressionTrackerRef.current.reset();
     setStatus("idle");
     setExpression("none");
     setHeadMovement("none");
@@ -126,8 +128,15 @@ export default function FaceCameraFeed() {
       setFaceDetected(hasFace);
 
       const blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
-      setExpression(classifyFacialExpression(blendshapes));
-      setScores(blendshapes.length > 0 ? computeExpressionScores(blendshapes) : null);
+      if (blendshapes.length > 0) {
+        const currentScores = computeExpressionScores(blendshapes);
+        setExpression(expressionTrackerRef.current.classify(currentScores));
+        setScores(currentScores);
+      } else {
+        expressionTrackerRef.current.reset();
+        setExpression("none");
+        setScores(null);
+      }
 
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
       if (matrix) {

@@ -43,36 +43,72 @@ export function computeExpressionScores(blendshapes: Blendshape[]): ExpressionSc
 }
 
 /**
- * Thresholds are deliberately forgiving: MediaPipe's blendshape scores
- * rarely hit "textbook" values for a natural (not exaggerated) expression,
- * and requiring a high bar made most real expressions register as "none".
- * `computeExpressionScores` is exposed separately so a debug overlay can
- * show the live numbers if these still need recalibrating — that's a much
- * faster feedback loop than guessing at thresholds blind again.
+ * Classifies expression by how far the current frame's blendshape scores
+ * deviate from a slow-moving "neutral face" baseline, instead of comparing
+ * to fixed absolute thresholds.
+ *
+ * Fixed thresholds don't generalize well here: MediaPipe's blendshape
+ * scores for a natural (not exaggerated) expression already sit at very
+ * different resting values from one face to the next (a naturally
+ * downturned mouth corner can score `mouthFrownLeft` non-trivially even at
+ * rest, for example) — a threshold loose enough for one face is often
+ * already past another face's neutral baseline. This tracks each session's
+ * own neutral face live and classifies relative to it, the same fix already
+ * applied to the native (Vision-based) classifier.
  */
-export function classifyFacialExpression(blendshapes: Blendshape[]): FacialExpression {
-  if (!blendshapes || blendshapes.length === 0) return "none";
+export class ExpressionBaselineTracker {
+  private baseline: ExpressionScores | null = null;
+  /** Slow enough that holding an expression doesn't erase its own signal
+   *  by getting absorbed into the baseline; fast enough to track real
+   *  drift (lighting, camera angle, a different person) within seconds. */
+  private readonly adaptRate = 0.02;
 
-  const s = computeExpressionScores(blendshapes);
-  const noseSneerMax = Math.max(
-    score(blendshapes, "noseSneerLeft"),
-    score(blendshapes, "noseSneerRight"),
-  );
-  const mouthPressMax = Math.max(
-    score(blendshapes, "mouthPressLeft"),
-    score(blendshapes, "mouthPressRight"),
-  );
+  reset() {
+    this.baseline = null;
+  }
 
-  const surprised = s.browInnerUp > 0.25 && s.jawOpen > 0.12 && s.eyeWide > 0.12;
-  const angry = s.browDown > 0.22 && (noseSneerMax > 0.1 || mouthPressMax > 0.15 || s.browDown > 0.35);
-  const sad = s.frown > 0.15 && !surprised;
-  const smile = s.smile > 0.2 && s.jawOpen < 0.5;
-  const blink = s.blink > 0.4;
+  classify(scores: ExpressionScores): FacialExpression {
+    const base = this.baseline;
+    if (!base) {
+      this.baseline = scores;
+      return "none";
+    }
 
-  if (surprised) return "surprised";
-  if (angry) return "angry";
-  if (sad) return "sad";
-  if (smile) return "smile";
-  if (blink) return "blink";
-  return "none";
+    const smileDelta = scores.smile - base.smile;
+    const frownDelta = scores.frown - base.frown;
+    const browDownDelta = scores.browDown - base.browDown;
+    const browInnerUpDelta = scores.browInnerUp - base.browInnerUp;
+    const jawOpenDelta = scores.jawOpen - base.jawOpen;
+    const eyeWideDelta = scores.eyeWide - base.eyeWide;
+
+    const surprised = browInnerUpDelta > 0.12 && jawOpenDelta > 0.08 && eyeWideDelta > 0.06;
+    const angry = browDownDelta > 0.12 && jawOpenDelta < 0.08;
+    const sad = frownDelta > 0.08 && !surprised;
+    const smile = smileDelta > 0.1 && jawOpenDelta < 0.3;
+    // Blink is inherently transient (eyes are open almost all the time),
+    // so an absolute threshold on the raw score works fine here — no
+    // baseline needed.
+    const blink = scores.blink > 0.4;
+
+    let expression: FacialExpression = "none";
+    if (surprised) expression = "surprised";
+    else if (angry) expression = "angry";
+    else if (sad) expression = "sad";
+    else if (smile) expression = "smile";
+    else if (blink) expression = "blink";
+
+    if (expression === "none") {
+      this.baseline = {
+        smile: base.smile + smileDelta * this.adaptRate,
+        frown: base.frown + frownDelta * this.adaptRate,
+        browDown: base.browDown + browDownDelta * this.adaptRate,
+        browInnerUp: base.browInnerUp + browInnerUpDelta * this.adaptRate,
+        jawOpen: base.jawOpen + jawOpenDelta * this.adaptRate,
+        eyeWide: base.eyeWide + eyeWideDelta * this.adaptRate,
+        blink: base.blink,
+      };
+    }
+
+    return expression;
+  }
 }

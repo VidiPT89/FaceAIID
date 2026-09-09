@@ -79,7 +79,7 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
   // into a circle, the other three fingers curled alongside (not fully
   // extended, not fully closed like a fist). Checked before closedFist,
   // which would otherwise claim this shape.
-  if (thumbIndexPinch < 0.25 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+  if (thumbIndexPinch < 0.18 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
     return "letterO";
   }
 
