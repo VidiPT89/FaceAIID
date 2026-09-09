@@ -17,8 +17,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemeMode>("system");
 
   useEffect(() => {
+    // Deliberately deferred to an effect: localStorage is only available
+    // client-side, so the first render must match the server ("system")
+    // before this runs, avoiding a hydration mismatch.
     const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
     if (stored === "light" || stored === "dark" || stored === "system") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
       setThemeState(stored);
     }
   }, []);

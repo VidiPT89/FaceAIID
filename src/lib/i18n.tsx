@@ -74,8 +74,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>("pt");
 
   useEffect(() => {
+    // Deliberately deferred to an effect: localStorage/navigator.language are
+    // only available client-side, so the first render must match the server
+    // ("pt") before this runs, avoiding a hydration mismatch.
     const stored = window.localStorage.getItem(STORAGE_KEY) as Language | null;
     if (stored === "pt" || stored === "en") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLanguageState(stored);
       return;
     }

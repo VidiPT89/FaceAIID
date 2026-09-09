@@ -45,12 +45,16 @@ export default function CameraFeed() {
 
   useEffect(() => stop, [stop]);
 
+  // Held in a ref so the recursive requestAnimationFrame call doesn't need
+  // to reference the function by name before its own definition finishes.
+  const detectLoopRef = useRef<() => void>(() => {});
+
   const detectLoop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const landmarker = landmarkerRef.current;
     if (!video || !canvas || !landmarker || video.readyState < 2) {
-      rafRef.current = requestAnimationFrame(detectLoop);
+      rafRef.current = requestAnimationFrame(() => detectLoopRef.current());
       return;
     }
 
@@ -96,8 +100,12 @@ export default function CameraFeed() {
     ctx.restore();
     setGesture(detected);
 
-    rafRef.current = requestAnimationFrame(detectLoop);
+    rafRef.current = requestAnimationFrame(() => detectLoopRef.current());
   }, []);
+
+  useEffect(() => {
+    detectLoopRef.current = detectLoop;
+  }, [detectLoop]);
 
   const start = useCallback(async () => {
     setStatus("loading");
@@ -130,13 +138,13 @@ export default function CameraFeed() {
       await video.play();
 
       setStatus("running");
-      rafRef.current = requestAnimationFrame(detectLoop);
+      rafRef.current = requestAnimationFrame(() => detectLoopRef.current());
     } catch (err) {
       console.error(err);
       const domErr = err as DOMException;
       setStatus(domErr?.name === "NotAllowedError" ? "denied" : "error");
     }
-  }, [detectLoop]);
+  }, []);
 
   return (
     <div className="flex flex-col items-center gap-6 w-full">
