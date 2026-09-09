@@ -11,8 +11,6 @@ const dictionaries: Record<Language, Dictionary> = {
     "app.title": "Face AI ID",
     "app.tagline": "Reconhecimento de gestos e expressões em tempo real",
     "splash.developedBy": "Criado por David Arsénio Martins",
-    "splash.website": "Site",
-    "splash.github": "GitHub",
     "hero.title": "Reconhecimento de gestos em tempo real",
     "hero.subtitle":
       "Aponta a câmara e mostra a mão. Tudo é processado localmente no teu browser — nada é enviado para nenhum servidor.",
@@ -27,7 +25,6 @@ const dictionaries: Record<Language, Dictionary> = {
     "gesture.closedFist": "Punho fechado ✊",
     "gesture.peaceSign": "Sinal de paz ✌️",
     "gesture.pointing": "A apontar ☝️",
-    "gesture.detected": "Gesto detetado",
     "theme.light": "Claro",
     "theme.dark": "Escuro",
     "theme.system": "Sistema",
@@ -66,8 +63,6 @@ const dictionaries: Record<Language, Dictionary> = {
     "app.title": "Face AI ID",
     "app.tagline": "Real-time gesture and expression recognition",
     "splash.developedBy": "Developed by David Arsénio Martins",
-    "splash.website": "Website",
-    "splash.github": "GitHub",
     "hero.title": "Real-time gesture recognition",
     "hero.subtitle":
       "Point the camera and show your hand. Everything runs locally in your browser — nothing is sent to any server.",
@@ -82,7 +77,6 @@ const dictionaries: Record<Language, Dictionary> = {
     "gesture.closedFist": "Closed fist ✊",
     "gesture.peaceSign": "Peace sign ✌️",
     "gesture.pointing": "Pointing ☝️",
-    "gesture.detected": "Gesture detected",
     "theme.light": "Light",
     "theme.dark": "Dark",
     "theme.system": "System",

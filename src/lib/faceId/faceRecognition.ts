@@ -48,7 +48,7 @@ export function getKnownFaces(): KnownFace[] {
 }
 
 export function saveKnownFace(name: string, descriptor: Float32Array) {
-  const faces = getKnownFaces();
+  const faces = getKnownFaces().filter((f) => f.name !== name);
   faces.push({ name, descriptor: Array.from(descriptor) });
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(faces));
 }
