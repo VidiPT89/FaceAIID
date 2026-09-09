@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://faceaiid.vercel.app"),
   title: "Face AI ID",
   description: "Real-time hand gesture, facial expression and head movement recognition, running entirely in the browser.",
 };
