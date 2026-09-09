@@ -6,8 +6,8 @@
 
 ## ✨ Features
 
-- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, and the ASL/LGP "I love you" sign
-- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, which needs a sequence model that tracks movement and orientation over time, not a single-frame classifier
+- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, the ASL/LGP "I love you" sign, and the fingerspelling letters L and O
+- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, which needs a sequence model that tracks movement and orientation over time, not a single-frame classifier (most fingerspelling letters, e.g. J or Z, also need motion and aren't included)
 - ✅ Facial expression recognition — smile, sad, surprised, angry, blinking — via 52 MediaPipe blendshapes
 - ✅ Head movement recognition — nodding yes, shaking no, head tilt — from the face's 3D transformation matrix
 - ✅ Face identification — register a face and get recognized afterwards, entirely client-side (face-api.js), stored only in `localStorage`

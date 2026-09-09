@@ -8,6 +8,8 @@ export type HandGesture =
   | "threeFingers"
   | "shaka"
   | "iLoveYou"
+  | "letterL"
+  | "letterO"
   | "none";
 
 interface Point {
@@ -43,16 +45,22 @@ function isFingerExtended(landmarks: Point[], tip: number, pip: number, mcp: num
   return angle > 140;
 }
 
+function distance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
 /**
  * Classifies a single, static hand shape per frame. This intentionally
- * covers a curated set of shapes that double as ASL/LGP numbers and a
- * couple of common signs (peace/V, W, shaka/Y, "I love you") — it is
- * **not** sign-language recognition: real sign languages combine hand
- * shape, orientation, movement and non-manual markers (facial expression)
- * over time, which needs a sequence model and training data, not a
- * per-frame geometric heuristic. Framing this as "a handful of
- * recognizable static shapes" rather than "sign language support" avoids
- * promising more than what a single-frame classifier can honestly deliver.
+ * covers a curated set of shapes that double as ASL/LGP numbers, a couple
+ * of common signs (peace/V, W, shaka/Y, "I love you"), and two
+ * fingerspelling letters that happen to be static poses (L, O) — it is
+ * **not** general sign-language recognition: real sign languages (and most
+ * fingerspelling letters, e.g. J or Z) combine hand shape, orientation,
+ * movement and non-manual markers (facial expression) over time, which
+ * needs a sequence model and training data, not a per-frame geometric
+ * heuristic. Framing this as "a handful of recognizable static shapes"
+ * rather than "sign language support" avoids promising more than what a
+ * single-frame classifier can honestly deliver.
  */
 export function classifyHandGesture(landmarks: Point[]): HandGesture {
   if (!landmarks || landmarks.length < 21) return "none";
@@ -60,6 +68,26 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
   const extended = FINGER_TIPS.map((tip, i) => isFingerExtended(landmarks, tip, FINGER_PIPS[i], FINGER_MCPS[i]));
   const [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended] = extended;
   const nonThumbExtendedCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
+
+  // Hand scale (wrist to middle-finger MCP) so absolute-distance thresholds
+  // below (thumb/index pinch for "O") stay correct regardless of how close
+  // the hand is to the camera.
+  const handScale = distance(landmarks[0], landmarks[9]) || 1;
+  const thumbIndexPinch = distance(landmarks[4], landmarks[8]) / handScale;
+
+  // ASL/LGP fingerspelling letter "O": thumb and index tips pinched together
+  // into a circle, the other three fingers curled alongside (not fully
+  // extended, not fully closed like a fist). Checked before closedFist,
+  // which would otherwise claim this shape.
+  if (thumbIndexPinch < 0.25 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    return "letterO";
+  }
+
+  // ASL/LGP fingerspelling letter "L": thumb and index extended at a right
+  // angle, other three fingers closed.
+  if (thumbExtended && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    return "letterL";
+  }
 
   if (thumbExtended && nonThumbExtendedCount === 0) {
     const thumbTip = landmarks[4];

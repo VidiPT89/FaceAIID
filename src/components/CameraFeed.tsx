@@ -24,6 +24,8 @@ const gestureLabelKey: Record<HandGesture, string> = {
   threeFingers: "gesture.threeFingers",
   shaka: "gesture.shaka",
   iLoveYou: "gesture.iLoveYou",
+  letterL: "gesture.letterL",
+  letterO: "gesture.letterO",
   none: "gesture.none",
 };
 
