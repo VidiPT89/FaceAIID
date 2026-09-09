@@ -29,11 +29,22 @@ export function classifyFacialExpression(blendshapes: Blendshape[]): FacialExpre
   const mouthPressL = score(blendshapes, "mouthPressLeft");
   const mouthPressR = score(blendshapes, "mouthPressRight");
 
-  const surprised = browInnerUp > 0.5 && jawOpen > 0.3 && (eyeWideL > 0.3 || eyeWideR > 0.3);
-  const angry = (browDownL > 0.5 && browDownR > 0.5) && (noseSneerL > 0.2 || noseSneerR > 0.2 || mouthPressL > 0.3 || mouthPressR > 0.3);
-  const sad = (frownL > 0.4 || frownR > 0.4) && (browDownL > 0.2 || browDownR > 0.2) && !surprised;
-  const smile = (smileL > 0.5 || smileR > 0.5) && jawOpen < 0.4;
-  const blink = eyeBlinkL > 0.6 && eyeBlinkR > 0.6;
+  // Thresholds are deliberately forgiving: MediaPipe's blendshape scores
+  // rarely hit "textbook" values for a natural (not exaggerated) expression,
+  // and requiring both sides of the face to independently clear a high bar
+  // made most real expressions register as "none".
+  const browDownAvg = (browDownL + browDownR) / 2;
+  const eyeWideMax = Math.max(eyeWideL, eyeWideR);
+  const frownMax = Math.max(frownL, frownR);
+  const smileMax = Math.max(smileL, smileR);
+  const noseSneerMax = Math.max(noseSneerL, noseSneerR);
+  const mouthPressMax = Math.max(mouthPressL, mouthPressR);
+
+  const surprised = browInnerUp > 0.3 && jawOpen > 0.15 && eyeWideMax > 0.15;
+  const angry = browDownAvg > 0.3 && (noseSneerMax > 0.12 || mouthPressMax > 0.2 || browDownAvg > 0.45);
+  const sad = frownMax > 0.22 && !surprised;
+  const smile = smileMax > 0.3 && jawOpen < 0.5;
+  const blink = eyeBlinkL > 0.5 && eyeBlinkR > 0.5;
 
   if (surprised) return "surprised";
   if (angry) return "angry";

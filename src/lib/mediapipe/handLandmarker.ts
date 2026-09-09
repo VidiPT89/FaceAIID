@@ -15,6 +15,13 @@ export async function getHandLandmarker() {
         },
         runningMode: "VIDEO",
         numHands: 2,
+        // Defaults (0.5) are conservative and can miss hands that are at an
+        // angle, partly out of frame, or a bit far from the camera. Lower
+        // thresholds trade a little precision for noticeably more reliable
+        // detection in typical webcam conditions.
+        minHandDetectionConfidence: 0.4,
+        minHandPresenceConfidence: 0.4,
+        minTrackingConfidence: 0.4,
       });
     })();
   }

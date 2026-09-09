@@ -17,6 +17,11 @@ export async function getFaceLandmarker() {
         numFaces: 1,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
+        // Same reasoning as the hand landmarker: the 0.5 defaults miss faces
+        // too readily at typical webcam distances/angles.
+        minFaceDetectionConfidence: 0.4,
+        minFacePresenceConfidence: 0.4,
+        minTrackingConfidence: 0.4,
       });
     })();
   }
