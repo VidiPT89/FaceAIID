@@ -39,14 +39,44 @@ function angleAtVertex(a: Point, vertex: Point, b: Point): number {
  * robust to the hand being rotated or tilted toward the camera, unlike a
  * pure tip-distance-from-wrist check, which only works when the hand is
  * held roughly upright and flat to the camera.
+ *
+ * The thumb gets a looser threshold than the other four fingers: its own
+ * joint (the IP joint, between the MCP and TIP landmarks used here) doesn't
+ * straighten out as close to 180° as the other fingers' PIP joints do even
+ * when the thumb is genuinely held straight out to the side (thumbs up, an
+ * "L" shape, shaka) — a real hand's thumb has less range of motion at that
+ * joint. Using the same 140° bar as the other fingers under-detects a
+ * clearly-extended thumb.
  */
-function isFingerExtended(landmarks: Point[], tip: number, pip: number, mcp: number): boolean {
+function isFingerExtended(landmarks: Point[], tip: number, pip: number, mcp: number, threshold = 140): boolean {
   const angle = angleAtVertex(landmarks[mcp], landmarks[pip], landmarks[tip]);
-  return angle > 140;
+  return angle > threshold;
 }
+
+const THUMB_EXTEND_ANGLE = 120;
 
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/** Raw numbers behind the thumb/pinch-dependent gestures, exposed for a
+ *  debug overlay — the same "show real numbers instead of guessing again"
+ *  approach already used for facial expression scores. */
+export interface HandDebugInfo {
+  thumbAngle: number;
+  thumbExtended: boolean;
+  pinch: number;
+}
+
+export function computeHandDebugInfo(landmarks: Point[]): HandDebugInfo | null {
+  if (!landmarks || landmarks.length < 21) return null;
+  const thumbAngle = angleAtVertex(landmarks[FINGER_MCPS[0]], landmarks[FINGER_PIPS[0]], landmarks[FINGER_TIPS[0]]);
+  const handScale = distance(landmarks[0], landmarks[9]) || 1;
+  return {
+    thumbAngle,
+    thumbExtended: thumbAngle > THUMB_EXTEND_ANGLE,
+    pinch: distance(landmarks[4], landmarks[8]) / handScale,
+  };
 }
 
 /**
@@ -65,7 +95,9 @@ function distance(a: Point, b: Point): number {
 export function classifyHandGesture(landmarks: Point[]): HandGesture {
   if (!landmarks || landmarks.length < 21) return "none";
 
-  const extended = FINGER_TIPS.map((tip, i) => isFingerExtended(landmarks, tip, FINGER_PIPS[i], FINGER_MCPS[i]));
+  const extended = FINGER_TIPS.map((tip, i) =>
+    isFingerExtended(landmarks, tip, FINGER_PIPS[i], FINGER_MCPS[i], i === 0 ? THUMB_EXTEND_ANGLE : 140),
+  );
   const [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended] = extended;
   const nonThumbExtendedCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
 
@@ -79,7 +111,7 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
   // into a circle, the other three fingers curled alongside (not fully
   // extended, not fully closed like a fist). Checked before closedFist,
   // which would otherwise claim this shape.
-  if (thumbIndexPinch < 0.18 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+  if (thumbIndexPinch < 0.22 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
     return "letterO";
   }
 

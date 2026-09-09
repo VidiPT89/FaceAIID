@@ -58,6 +58,12 @@ export function computeExpressionScores(blendshapes: Blendshape[]): ExpressionSc
  */
 export class ExpressionBaselineTracker {
   private baseline: ExpressionScores | null = null;
+  /** A fast-moving average of the raw scores, recomputed every frame.
+   *  Blendshape scores still jitter a little frame-to-frame even on a
+   *  still, neutral face; smoothing first keeps that jitter from crossing
+   *  the delta thresholds below on its own. */
+  private smoothed: ExpressionScores | null = null;
+  private readonly smoothRate = 0.35;
   /** Slow enough that holding an expression doesn't erase its own signal
    *  by getting absorbed into the baseline; fast enough to track real
    *  drift (lighting, camera angle, a different person) within seconds. */
@@ -65,30 +71,49 @@ export class ExpressionBaselineTracker {
 
   reset() {
     this.baseline = null;
+    this.smoothed = null;
   }
 
   classify(scores: ExpressionScores): FacialExpression {
-    const base = this.baseline;
-    if (!base) {
+    const previousSmoothed = this.smoothed;
+    if (!previousSmoothed) {
+      this.smoothed = scores;
       this.baseline = scores;
       return "none";
     }
 
-    const smileDelta = scores.smile - base.smile;
-    const frownDelta = scores.frown - base.frown;
-    const browDownDelta = scores.browDown - base.browDown;
-    const browInnerUpDelta = scores.browInnerUp - base.browInnerUp;
-    const jawOpenDelta = scores.jawOpen - base.jawOpen;
-    const eyeWideDelta = scores.eyeWide - base.eyeWide;
+    const s: ExpressionScores = {
+      smile: previousSmoothed.smile + (scores.smile - previousSmoothed.smile) * this.smoothRate,
+      frown: previousSmoothed.frown + (scores.frown - previousSmoothed.frown) * this.smoothRate,
+      browDown: previousSmoothed.browDown + (scores.browDown - previousSmoothed.browDown) * this.smoothRate,
+      browInnerUp: previousSmoothed.browInnerUp + (scores.browInnerUp - previousSmoothed.browInnerUp) * this.smoothRate,
+      jawOpen: previousSmoothed.jawOpen + (scores.jawOpen - previousSmoothed.jawOpen) * this.smoothRate,
+      eyeWide: previousSmoothed.eyeWide + (scores.eyeWide - previousSmoothed.eyeWide) * this.smoothRate,
+      blink: scores.blink,
+    };
+    this.smoothed = s;
+
+    const base = this.baseline;
+    if (!base) {
+      this.baseline = s;
+      return "none";
+    }
+
+    const smileDelta = s.smile - base.smile;
+    const frownDelta = s.frown - base.frown;
+    const browDownDelta = s.browDown - base.browDown;
+    const browInnerUpDelta = s.browInnerUp - base.browInnerUp;
+    const jawOpenDelta = s.jawOpen - base.jawOpen;
+    const eyeWideDelta = s.eyeWide - base.eyeWide;
 
     const surprised = browInnerUpDelta > 0.12 && jawOpenDelta > 0.08 && eyeWideDelta > 0.06;
-    const angry = browDownDelta > 0.12 && jawOpenDelta < 0.08;
+    const angry = browDownDelta > 0.12 && jawOpenDelta < 0.08 && !surprised;
     const sad = frownDelta > 0.08 && !surprised;
     const smile = smileDelta > 0.1 && jawOpenDelta < 0.3;
     // Blink is inherently transient (eyes are open almost all the time),
     // so an absolute threshold on the raw score works fine here — no
-    // baseline needed.
-    const blink = scores.blink > 0.4;
+    // baseline or smoothing needed.
+    const blink = s.blink > 0.4;
 
     let expression: FacialExpression = "none";
     if (surprised) expression = "surprised";

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/lib/i18n";
-import { classifyHandGesture, type HandGesture } from "@/lib/gestures/handGestures";
+import { classifyHandGesture, computeHandDebugInfo, type HandDebugInfo, type HandGesture } from "@/lib/gestures/handGestures";
 import { getHandLandmarker } from "@/lib/mediapipe/handLandmarker";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
@@ -41,6 +41,7 @@ export default function CameraFeed() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [hands, setHands] = useState<DetectedHand[]>([]);
+  const [handDebug, setHandDebug] = useState<HandDebugInfo | null>(null);
   const [loopError, setLoopError] = useState<string | null>(null);
 
   const stop = useCallback(() => {
@@ -93,6 +94,7 @@ export default function CameraFeed() {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const detectedHands: DetectedHand[] = [];
+      let firstHandDebug: HandDebugInfo | null = null;
 
       if (result.landmarks && result.landmarks.length > 0) {
         result.landmarks.forEach((landmarks, i) => {
@@ -117,11 +119,13 @@ export default function CameraFeed() {
           const handedness: Handedness = rawLabel === "Left" ? "right" : rawLabel === "Right" ? "left" : "unknown";
 
           detectedHands.push({ gesture, handedness });
+          if (i === 0) firstHandDebug = computeHandDebugInfo(landmarks);
         });
       }
 
       ctx.restore();
       setHands(detectedHands);
+      setHandDebug(firstHandDebug);
       setLoopError(null);
     } catch (err) {
       console.error("[FaceAIID] hand detection frame failed", err);
@@ -221,7 +225,13 @@ export default function CameraFeed() {
 
         {status === "running" && (
           <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono text-white/90">
-            {loopError ? `error: ${loopError}` : `hands: ${hands.length}`}
+            <div>{loopError ? `error: ${loopError}` : `hands: ${hands.length}`}</div>
+            {handDebug && (
+              <div>
+                thumb {handDebug.thumbAngle.toFixed(0)}° ({handDebug.thumbExtended ? "out" : "in"}) · pinch{" "}
+                {handDebug.pinch.toFixed(2)}
+              </div>
+            )}
           </div>
         )}
       </div>
