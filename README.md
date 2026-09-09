@@ -6,9 +6,12 @@
 
 ## ✨ Features
 
-- ✅ Live hand gesture recognition — thumbs up, open palm, closed fist — straight from your webcam
-- ✅ On-device inference with MediaPipe Tasks Vision — no video ever leaves the browser
-- ✅ Animated hand-landmark overlay drawn in real time on a canvas
+- ✅ Live hand gesture recognition — thumbs up, open palm, closed fist, peace sign, pointing — straight from your webcam
+- ✅ Facial expression recognition — smile, sad, surprised, angry, blinking — via 52 MediaPipe blendshapes
+- ✅ Head movement recognition — nodding yes, shaking no, head tilt — from the face's 3D transformation matrix
+- ✅ Face identification — register a face and get recognized afterwards, entirely client-side (face-api.js), stored only in `localStorage`
+- ✅ On-device inference throughout — MediaPipe Tasks Vision + face-api.js, no video or biometric data ever leaves the browser
+- ✅ Animated hand-landmark / face-contour overlays drawn in real time on canvas
 - ✅ Smooth, fluid UI animations powered by Framer Motion, including an animated splash screen
 - ✅ Runtime language switch — Português (PT-PT) and English
 - ✅ Dark mode, Light mode, and System mode
@@ -23,7 +26,8 @@
 | Language   | TypeScript                        |
 | Styling    | Tailwind CSS                      |
 | Animation  | Framer Motion                     |
-| Vision     | MediaPipe Tasks Vision (HandLandmarker) |
+| Vision     | MediaPipe Tasks Vision (Hand + Face Landmarker) |
+| Face ID    | @vladmandic/face-api (self-hosted models) |
 
 ## 🚀 Quick Start
 
@@ -44,9 +48,18 @@ Open [http://localhost:3000](http://localhost:3000) and allow camera access.
 
 ## 📖 Usage
 
-Press **Start camera**, allow the permission prompt, and show your hand to the camera. The app draws the
-detected hand landmarks live and surfaces the recognized gesture (👍 thumbs up, ✋ open palm, ✊ closed fist)
-in an animated badge. Switch language and appearance at any time from the header.
+Pick a mode from the header — **Hands**, **Face**, or **Identification** — press **Start camera**, allow
+the permission prompt, and:
+
+- **Hands**: show a hand shape to get 👍 / ✋ / ✊ / ✌️ / ☝️ recognized in an animated badge, with the hand
+  skeleton drawn live over the feed.
+- **Face**: smile, frown, look surprised, nod or shake your head — the detected expression and head
+  movement show up as badges, with the face contour drawn live.
+- **Identification**: type a name and press **Register face** to store your face descriptor locally, then
+  the app recognizes you (or shows "not recognized") on every subsequent frame. Everything stays in this
+  browser's `localStorage` — nothing is ever uploaded.
+
+Switch language and appearance at any time from the header.
 
 ## 🧪 Testing
 

@@ -1,4 +1,4 @@
-export type HandGesture = "thumbsUp" | "openPalm" | "closedFist" | "none";
+export type HandGesture = "thumbsUp" | "openPalm" | "closedFist" | "peaceSign" | "pointing" | "none";
 
 interface Point {
   x: number;
@@ -41,6 +41,14 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
 
   if (nonThumbExtendedCount === 4) {
     return "openPalm";
+  }
+
+  if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
+    return "peaceSign";
+  }
+
+  if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    return "pointing";
   }
 
   if (!thumbExtended && nonThumbExtendedCount === 0) {
