@@ -8,15 +8,6 @@ import { getHandLandmarker } from "@/lib/mediapipe/handLandmarker";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
 
-const CONNECTIONS: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4],
-  [0, 5], [5, 6], [6, 7], [7, 8],
-  [5, 9], [9, 10], [10, 11], [11, 12],
-  [9, 13], [13, 14], [14, 15], [15, 16],
-  [13, 17], [17, 18], [18, 19], [19, 20],
-  [0, 17],
-];
-
 const gestureLabelKey: Record<HandGesture, string> = {
   thumbsUp: "gesture.thumbsUp",
   openPalm: "gesture.openPalm",
@@ -31,6 +22,8 @@ export default function CameraFeed() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const landmarkerRef = useRef<import("@mediapipe/tasks-vision").HandLandmarker | null>(null);
+  const drawingUtilsRef = useRef<import("@mediapipe/tasks-vision").DrawingUtils | null>(null);
+  const connectionsRef = useRef<{ start: number; end: number }[]>([]);
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -58,7 +51,8 @@ export default function CameraFeed() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const landmarker = landmarkerRef.current;
-    if (!video || !canvas || !landmarker || video.readyState < 2) {
+    const drawingUtils = drawingUtilsRef.current;
+    if (!video || !canvas || !landmarker || !drawingUtils || video.readyState < 2) {
       rafRef.current = requestAnimationFrame(() => detectLoopRef.current());
       return;
     }
@@ -87,22 +81,15 @@ export default function CameraFeed() {
 
       if (result.landmarks && result.landmarks.length > 0) {
         for (const landmarks of result.landmarks) {
-          ctx.strokeStyle = "#ffb703";
-          ctx.lineWidth = 3;
-          for (const [a, b] of CONNECTIONS) {
-            const pa = landmarks[a];
-            const pb = landmarks[b];
-            ctx.beginPath();
-            ctx.moveTo(pa.x * canvas.width, pa.y * canvas.height);
-            ctx.lineTo(pb.x * canvas.width, pb.y * canvas.height);
-            ctx.stroke();
-          }
-          ctx.fillStyle = "#ff7a1a";
-          for (const point of landmarks) {
-            ctx.beginPath();
-            ctx.arc(point.x * canvas.width, point.y * canvas.height, 4, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          drawingUtils.drawConnectors(landmarks, connectionsRef.current, {
+            color: "#ffb703",
+            lineWidth: 3,
+          });
+          drawingUtils.drawLandmarks(landmarks, {
+            color: "#ff7a1a",
+            fillColor: "#ff7a1a",
+            radius: 4,
+          });
 
           const classification = classifyHandGesture(landmarks);
           if (classification !== "none") detected = classification;
@@ -137,9 +124,17 @@ export default function CameraFeed() {
       streamRef.current = stream;
 
       const video = videoRef.current;
-      if (!video) return;
+      const canvas = canvasRef.current;
+      if (!video || !canvas) return;
       video.srcObject = stream;
       await video.play();
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const { DrawingUtils, HandLandmarker } = await import("@mediapipe/tasks-vision");
+        drawingUtilsRef.current = new DrawingUtils(ctx);
+        connectionsRef.current = HandLandmarker.HAND_CONNECTIONS;
+      }
 
       setStatus("running");
       rafRef.current = requestAnimationFrame(() => detectLoopRef.current());

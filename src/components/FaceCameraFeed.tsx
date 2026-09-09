@@ -9,12 +9,6 @@ import { HeadMovementTracker, matrixToEuler, type HeadMovement } from "@/lib/ges
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
 
-const FACE_OVAL: number[] = [
-  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378,
-  400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21,
-  54, 103, 67, 109, 10,
-];
-
 const expressionLabelKey: Record<FacialExpression, string> = {
   smile: "expression.smile",
   sad: "expression.sad",
@@ -31,11 +25,20 @@ const headLabelKey: Record<HeadMovement, string> = {
   none: "head.none",
 };
 
+interface FaceConnectionSets {
+  tesselation: { start: number; end: number }[];
+  contours: { start: number; end: number }[];
+  leftIris: { start: number; end: number }[];
+  rightIris: { start: number; end: number }[];
+}
+
 export default function FaceCameraFeed() {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const landmarkerRef = useRef<import("@mediapipe/tasks-vision").FaceLandmarker | null>(null);
+  const drawingUtilsRef = useRef<import("@mediapipe/tasks-vision").DrawingUtils | null>(null);
+  const connectionsRef = useRef<FaceConnectionSets | null>(null);
   const trackerRef = useRef(new HeadMovementTracker());
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -64,7 +67,9 @@ export default function FaceCameraFeed() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const landmarker = landmarkerRef.current;
-    if (!video || !canvas || !landmarker || video.readyState < 2) {
+    const drawingUtils = drawingUtilsRef.current;
+    const connections = connectionsRef.current;
+    if (!video || !canvas || !landmarker || !drawingUtils || !connections || video.readyState < 2) {
       rafRef.current = requestAnimationFrame(() => loopRef.current());
       return;
     }
@@ -90,17 +95,26 @@ export default function FaceCameraFeed() {
 
       if (hasFace) {
         const landmarks = result.faceLandmarks[0];
-        ctx.strokeStyle = "#ffb703";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        FACE_OVAL.forEach((index, i) => {
-          const point = landmarks[index];
-          const x = point.x * canvas.width;
-          const y = point.y * canvas.height;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+        // Full mesh first (faint), then the key contours (eyes, eyebrows,
+        // lips, face oval) drawn bold on top, then the irises — the same
+        // layering MediaPipe's own face mesh demos use so every tracked
+        // point is visibly represented, not just a rough outline.
+        drawingUtils.drawConnectors(landmarks, connections.tesselation, {
+          color: "rgba(255, 183, 3, 0.35)",
+          lineWidth: 1,
         });
-        ctx.stroke();
+        drawingUtils.drawConnectors(landmarks, connections.contours, {
+          color: "#ff7a1a",
+          lineWidth: 2,
+        });
+        drawingUtils.drawConnectors(landmarks, connections.leftIris, {
+          color: "#d94a1a",
+          lineWidth: 2,
+        });
+        drawingUtils.drawConnectors(landmarks, connections.rightIris, {
+          color: "#d94a1a",
+          lineWidth: 2,
+        });
       }
 
       ctx.restore();
@@ -139,9 +153,22 @@ export default function FaceCameraFeed() {
       streamRef.current = stream;
 
       const video = videoRef.current;
-      if (!video) return;
+      const canvas = canvasRef.current;
+      if (!video || !canvas) return;
       video.srcObject = stream;
       await video.play();
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const { DrawingUtils, FaceLandmarker } = await import("@mediapipe/tasks-vision");
+        drawingUtilsRef.current = new DrawingUtils(ctx);
+        connectionsRef.current = {
+          tesselation: FaceLandmarker.FACE_LANDMARKS_TESSELATION,
+          contours: FaceLandmarker.FACE_LANDMARKS_CONTOURS,
+          leftIris: FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS,
+          rightIris: FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS,
+        };
+      }
 
       setStatus("running");
       rafRef.current = requestAnimationFrame(() => loopRef.current());
