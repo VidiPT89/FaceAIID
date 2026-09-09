@@ -7,13 +7,23 @@ import { classifyHandGesture, type HandGesture } from "@/lib/gestures/handGestur
 import { getHandLandmarker } from "@/lib/mediapipe/handLandmarker";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
+type Handedness = "left" | "right" | "unknown";
+
+interface DetectedHand {
+  gesture: HandGesture;
+  handedness: Handedness;
+}
 
 const gestureLabelKey: Record<HandGesture, string> = {
   thumbsUp: "gesture.thumbsUp",
+  thumbsDown: "gesture.thumbsDown",
   openPalm: "gesture.openPalm",
   closedFist: "gesture.closedFist",
   peaceSign: "gesture.peaceSign",
   pointing: "gesture.pointing",
+  threeFingers: "gesture.threeFingers",
+  shaka: "gesture.shaka",
+  iLoveYou: "gesture.iLoveYou",
   none: "gesture.none",
 };
 
@@ -28,8 +38,7 @@ export default function CameraFeed() {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [status, setStatus] = useState<Status>("idle");
-  const [gesture, setGesture] = useState<HandGesture>("none");
-  const [handsDetected, setHandsDetected] = useState(0);
+  const [hands, setHands] = useState<DetectedHand[]>([]);
   const [loopError, setLoopError] = useState<string | null>(null);
 
   const stop = useCallback(() => {
@@ -38,7 +47,7 @@ export default function CameraFeed() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setStatus("idle");
-    setGesture("none");
+    setHands([]);
   }, []);
 
   useEffect(() => stop, [stop]);
@@ -76,11 +85,15 @@ export default function CameraFeed() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
+      // The actual camera image was never drawn here before — only the
+      // skeleton — so the canvas showed floating lines on an empty
+      // background instead of the live picture underneath them.
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      let detected: HandGesture = "none";
+      const detectedHands: DetectedHand[] = [];
 
       if (result.landmarks && result.landmarks.length > 0) {
-        for (const landmarks of result.landmarks) {
+        result.landmarks.forEach((landmarks, i) => {
           drawingUtils.drawConnectors(landmarks, connectionsRef.current, {
             color: "#ffb703",
             lineWidth: 3,
@@ -91,14 +104,22 @@ export default function CameraFeed() {
             radius: 4,
           });
 
-          const classification = classifyHandGesture(landmarks);
-          if (classification !== "none") detected = classification;
-        }
+          const gesture = classifyHandGesture(landmarks);
+
+          // MediaPipe's handedness assumes a mirrored (selfie) input image;
+          // our video frame is fed to the model un-mirrored (we only mirror
+          // the canvas at draw time), so the raw label is the opposite of
+          // what the user sees in the mirrored preview — swap it so "left"
+          // means "the hand that looks like your left hand" on screen.
+          const rawLabel = result.handedness?.[i]?.[0]?.categoryName;
+          const handedness: Handedness = rawLabel === "Left" ? "right" : rawLabel === "Right" ? "left" : "unknown";
+
+          detectedHands.push({ gesture, handedness });
+        });
       }
 
       ctx.restore();
-      setGesture(detected);
-      setHandsDetected(result.landmarks?.length ?? 0);
+      setHands(detectedHands);
       setLoopError(null);
     } catch (err) {
       console.error("[FaceAIID] hand detection frame failed", err);
@@ -149,10 +170,7 @@ export default function CameraFeed() {
     <div className="flex flex-col items-center gap-6 w-full">
       <div className="relative w-full max-w-2xl aspect-video rounded-2xl overflow-hidden border border-border bg-surface shadow-2xl shadow-black/10">
         <video ref={videoRef} className="hidden" playsInline muted />
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full object-cover -scale-x-100"
-        />
+        <canvas ref={canvasRef} className="w-full h-full object-cover" />
         <AnimatePresence>
           {status !== "running" && (
             <motion.div
@@ -175,23 +193,33 @@ export default function CameraFeed() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {status === "running" && gesture !== "none" && (
+          {status === "running" && hands.some((h) => h.gesture !== "none") && (
             <motion.div
-              key={gesture}
+              key={hands.map((h) => `${h.handedness}-${h.gesture}`).join("|")}
               initial={{ opacity: 0, y: 10, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 gradient-brand text-black font-semibold px-5 py-2 rounded-full shadow-lg"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1"
             >
-              {t(gestureLabelKey[gesture])}
+              {hands
+                .filter((h) => h.gesture !== "none")
+                .map((h, i) => (
+                  <span
+                    key={i}
+                    className="gradient-brand text-black font-semibold px-5 py-2 rounded-full shadow-lg text-sm"
+                  >
+                    {h.handedness !== "unknown" && `${t(`hand.${h.handedness}`)} — `}
+                    {t(gestureLabelKey[h.gesture])}
+                  </span>
+                ))}
             </motion.div>
           )}
         </AnimatePresence>
 
         {status === "running" && (
           <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono text-white/90">
-            {loopError ? `error: ${loopError}` : `hands: ${handsDetected}`}
+            {loopError ? `error: ${loopError}` : `hands: ${hands.length}`}
           </div>
         )}
       </div>

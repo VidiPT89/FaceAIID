@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/lib/i18n";
 import { getFaceLandmarker } from "@/lib/mediapipe/faceLandmarker";
-import { classifyFacialExpression, type FacialExpression } from "@/lib/gestures/facialExpressions";
+import { classifyFacialExpression, computeExpressionScores, type ExpressionScores, type FacialExpression } from "@/lib/gestures/facialExpressions";
 import { HeadMovementTracker, matrixToEuler, type HeadMovement } from "@/lib/gestures/headMovement";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
@@ -49,6 +49,7 @@ export default function FaceCameraFeed() {
   const [headMovement, setHeadMovement] = useState<HeadMovement>("none");
   const [faceDetected, setFaceDetected] = useState(false);
   const [loopError, setLoopError] = useState<string | null>(null);
+  const [scores, setScores] = useState<ExpressionScores | null>(null);
 
   const stop = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -90,6 +91,10 @@ export default function FaceCameraFeed() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
+      // The actual camera image was never drawn here before — only the
+      // mesh — so the canvas showed floating lines on an empty background
+      // instead of the live picture underneath them.
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const hasFace = !!(result.faceLandmarks && result.faceLandmarks.length > 0);
 
@@ -122,6 +127,7 @@ export default function FaceCameraFeed() {
 
       const blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
       setExpression(classifyFacialExpression(blendshapes));
+      setScores(blendshapes.length > 0 ? computeExpressionScores(blendshapes) : null);
 
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
       if (matrix) {
@@ -183,7 +189,7 @@ export default function FaceCameraFeed() {
     <div className="flex flex-col items-center gap-6 w-full">
       <div className="relative w-full max-w-2xl aspect-video rounded-2xl overflow-hidden border border-border bg-surface shadow-2xl shadow-black/10">
         <video ref={videoRef} className="hidden" playsInline muted />
-        <canvas ref={canvasRef} className="w-full h-full object-cover -scale-x-100" />
+        <canvas ref={canvasRef} className="w-full h-full object-cover" />
         <AnimatePresence>
           {status !== "running" && (
             <motion.div
@@ -230,8 +236,21 @@ export default function FaceCameraFeed() {
         </AnimatePresence>
 
         {status === "running" && (
-          <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono text-white/90">
-            {loopError ? `error: ${loopError}` : `face: ${faceDetected ? "yes" : "no"}`}
+          <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-mono text-white/90 leading-tight">
+            {loopError ? (
+              `error: ${loopError}`
+            ) : (
+              <>
+                <div>face: {faceDetected ? "yes" : "no"}</div>
+                {scores && (
+                  <div>
+                    smile {scores.smile.toFixed(2)} · frown {scores.frown.toFixed(2)} · browDown{" "}
+                    {scores.browDown.toFixed(2)} · browUp {scores.browInnerUp.toFixed(2)} · jaw{" "}
+                    {scores.jawOpen.toFixed(2)} · blink {scores.blink.toFixed(2)}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

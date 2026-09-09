@@ -5,46 +5,69 @@ interface Blendshape {
   score: number;
 }
 
+export interface ExpressionScores {
+  smile: number;
+  frown: number;
+  browDown: number;
+  browInnerUp: number;
+  jawOpen: number;
+  eyeWide: number;
+  blink: number;
+}
+
 function score(blendshapes: Blendshape[], name: string): number {
   return blendshapes.find((b) => b.categoryName === name)?.score ?? 0;
 }
 
-export function classifyFacialExpression(blendshapes: Blendshape[]): FacialExpression {
-  if (!blendshapes || blendshapes.length === 0) return "none";
-
+export function computeExpressionScores(blendshapes: Blendshape[]): ExpressionScores {
   const smileL = score(blendshapes, "mouthSmileLeft");
   const smileR = score(blendshapes, "mouthSmileRight");
   const frownL = score(blendshapes, "mouthFrownLeft");
   const frownR = score(blendshapes, "mouthFrownRight");
   const browDownL = score(blendshapes, "browDownLeft");
   const browDownR = score(blendshapes, "browDownRight");
-  const browInnerUp = score(blendshapes, "browInnerUp");
-  const jawOpen = score(blendshapes, "jawOpen");
   const eyeWideL = score(blendshapes, "eyeWideLeft");
   const eyeWideR = score(blendshapes, "eyeWideRight");
   const eyeBlinkL = score(blendshapes, "eyeBlinkLeft");
   const eyeBlinkR = score(blendshapes, "eyeBlinkRight");
-  const noseSneerL = score(blendshapes, "noseSneerLeft");
-  const noseSneerR = score(blendshapes, "noseSneerRight");
-  const mouthPressL = score(blendshapes, "mouthPressLeft");
-  const mouthPressR = score(blendshapes, "mouthPressRight");
 
-  // Thresholds are deliberately forgiving: MediaPipe's blendshape scores
-  // rarely hit "textbook" values for a natural (not exaggerated) expression,
-  // and requiring both sides of the face to independently clear a high bar
-  // made most real expressions register as "none".
-  const browDownAvg = (browDownL + browDownR) / 2;
-  const eyeWideMax = Math.max(eyeWideL, eyeWideR);
-  const frownMax = Math.max(frownL, frownR);
-  const smileMax = Math.max(smileL, smileR);
-  const noseSneerMax = Math.max(noseSneerL, noseSneerR);
-  const mouthPressMax = Math.max(mouthPressL, mouthPressR);
+  return {
+    smile: Math.max(smileL, smileR),
+    frown: Math.max(frownL, frownR),
+    browDown: (browDownL + browDownR) / 2,
+    browInnerUp: score(blendshapes, "browInnerUp"),
+    jawOpen: score(blendshapes, "jawOpen"),
+    eyeWide: Math.max(eyeWideL, eyeWideR),
+    blink: Math.min(eyeBlinkL, eyeBlinkR),
+  };
+}
 
-  const surprised = browInnerUp > 0.3 && jawOpen > 0.15 && eyeWideMax > 0.15;
-  const angry = browDownAvg > 0.3 && (noseSneerMax > 0.12 || mouthPressMax > 0.2 || browDownAvg > 0.45);
-  const sad = frownMax > 0.22 && !surprised;
-  const smile = smileMax > 0.3 && jawOpen < 0.5;
-  const blink = eyeBlinkL > 0.5 && eyeBlinkR > 0.5;
+/**
+ * Thresholds are deliberately forgiving: MediaPipe's blendshape scores
+ * rarely hit "textbook" values for a natural (not exaggerated) expression,
+ * and requiring a high bar made most real expressions register as "none".
+ * `computeExpressionScores` is exposed separately so a debug overlay can
+ * show the live numbers if these still need recalibrating — that's a much
+ * faster feedback loop than guessing at thresholds blind again.
+ */
+export function classifyFacialExpression(blendshapes: Blendshape[]): FacialExpression {
+  if (!blendshapes || blendshapes.length === 0) return "none";
+
+  const s = computeExpressionScores(blendshapes);
+  const noseSneerMax = Math.max(
+    score(blendshapes, "noseSneerLeft"),
+    score(blendshapes, "noseSneerRight"),
+  );
+  const mouthPressMax = Math.max(
+    score(blendshapes, "mouthPressLeft"),
+    score(blendshapes, "mouthPressRight"),
+  );
+
+  const surprised = s.browInnerUp > 0.25 && s.jawOpen > 0.12 && s.eyeWide > 0.12;
+  const angry = s.browDown > 0.22 && (noseSneerMax > 0.1 || mouthPressMax > 0.15 || s.browDown > 0.35);
+  const sad = s.frown > 0.15 && !surprised;
+  const smile = s.smile > 0.2 && s.jawOpen < 0.5;
+  const blink = s.blink > 0.4;
 
   if (surprised) return "surprised";
   if (angry) return "angry";

@@ -6,7 +6,8 @@
 
 ## ✨ Features
 
-- ✅ Live hand gesture recognition — thumbs up, open palm, closed fist, peace sign, pointing — straight from your webcam
+- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, and the ASL/LGP "I love you" sign
+- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, which needs a sequence model that tracks movement and orientation over time, not a single-frame classifier
 - ✅ Facial expression recognition — smile, sad, surprised, angry, blinking — via 52 MediaPipe blendshapes
 - ✅ Head movement recognition — nodding yes, shaking no, head tilt — from the face's 3D transformation matrix
 - ✅ Face identification — register a face and get recognized afterwards, entirely client-side (face-api.js), stored only in `localStorage`
@@ -51,8 +52,8 @@ Open [http://localhost:3000](http://localhost:3000) and allow camera access.
 Pick a mode from the header — **Hands**, **Face**, or **Identification** — press **Start camera**, allow
 the permission prompt, and:
 
-- **Hands**: show a hand shape to get 👍 / ✋ / ✊ / ✌️ / ☝️ recognized in an animated badge, with the hand
-  skeleton drawn live over the feed.
+- **Hands**: show one or both hands to get a shape recognized per hand (with a left/right label) in an
+  animated badge, with the full hand skeleton drawn live over the feed.
 - **Face**: smile, frown, look surprised, nod or shake your head — the detected expression and head
   movement show up as badges, with the face contour drawn live.
 - **Identification**: type a name and press **Register face** to store your face descriptor locally, then

@@ -1,4 +1,14 @@
-export type HandGesture = "thumbsUp" | "openPalm" | "closedFist" | "peaceSign" | "pointing" | "none";
+export type HandGesture =
+  | "thumbsUp"
+  | "thumbsDown"
+  | "openPalm"
+  | "closedFist"
+  | "peaceSign"
+  | "pointing"
+  | "threeFingers"
+  | "shaka"
+  | "iLoveYou"
+  | "none";
 
 interface Point {
   x: number;
@@ -33,24 +43,52 @@ function isFingerExtended(landmarks: Point[], tip: number, pip: number, mcp: num
   return angle > 140;
 }
 
+/**
+ * Classifies a single, static hand shape per frame. This intentionally
+ * covers a curated set of shapes that double as ASL/LGP numbers and a
+ * couple of common signs (peace/V, W, shaka/Y, "I love you") — it is
+ * **not** sign-language recognition: real sign languages combine hand
+ * shape, orientation, movement and non-manual markers (facial expression)
+ * over time, which needs a sequence model and training data, not a
+ * per-frame geometric heuristic. Framing this as "a handful of
+ * recognizable static shapes" rather than "sign language support" avoids
+ * promising more than what a single-frame classifier can honestly deliver.
+ */
 export function classifyHandGesture(landmarks: Point[]): HandGesture {
   if (!landmarks || landmarks.length < 21) return "none";
 
   const extended = FINGER_TIPS.map((tip, i) => isFingerExtended(landmarks, tip, FINGER_PIPS[i], FINGER_MCPS[i]));
   const [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended] = extended;
-  const nonThumbExtended = [indexExtended, middleExtended, ringExtended, pinkyExtended];
-  const nonThumbExtendedCount = nonThumbExtended.filter(Boolean).length;
+  const nonThumbExtendedCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
 
   if (thumbExtended && nonThumbExtendedCount === 0) {
     const thumbTip = landmarks[4];
     const thumbMcp = landmarks[2];
-    if (thumbTip.y < thumbMcp.y - 0.02) {
-      return "thumbsUp";
-    }
+    if (thumbTip.y < thumbMcp.y - 0.02) return "thumbsUp";
+    if (thumbTip.y > thumbMcp.y + 0.02) return "thumbsDown";
   }
 
+  // Shaka / ASL-LGP "Y": thumb and pinky extended, the three middle fingers
+  // closed.
+  if (thumbExtended && pinkyExtended && !indexExtended && !middleExtended && !ringExtended) {
+    return "shaka";
+  }
+
+  // ASL "I love you": thumb, index and pinky extended, middle and ring closed.
+  if (thumbExtended && indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
+    return "iLoveYou";
+  }
+
+  // Peace sign / V / number 2: index and middle only.
   if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
     return "peaceSign";
+  }
+
+  // W / number 3: index, middle and ring, no pinky. Checked before the
+  // tolerant "openPalm" fallback below, which would otherwise swallow it
+  // (3 non-thumb fingers extended).
+  if (indexExtended && middleExtended && ringExtended && !pinkyExtended) {
+    return "threeFingers";
   }
 
   if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
@@ -58,8 +96,8 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
   }
 
   // Tolerate one misdetected finger (commonly the pinky, which is easiest
-  // to lose track of at an angle) instead of requiring a perfect 4-of-4 or
-  // 0-of-4 match.
+  // to lose track of at an angle) instead of requiring a perfect 4-of-4
+  // match.
   if (nonThumbExtendedCount >= 3) {
     return "openPalm";
   }
