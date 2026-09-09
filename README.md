@@ -2,7 +2,7 @@
 
 > Real-time hand gesture, facial expression and head movement recognition running entirely in the browser, built with Next.js and MediaPipe.
 
-[Report Bug](https://github.com/VidiPT89/FaceAIID/issues) · [Request Feature](https://github.com/VidiPT89/FaceAIID/issues)
+[Live Demo](https://faceaiid.vercel.app) · [Report Bug](https://github.com/VidiPT89/FaceAIID/issues) · [Request Feature](https://github.com/VidiPT89/FaceAIID/issues)
 
 ## ✨ Features
 
