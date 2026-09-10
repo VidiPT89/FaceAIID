@@ -9,6 +9,7 @@ import CameraFeed from "@/components/CameraFeed";
 import FaceCameraFeed from "@/components/FaceCameraFeed";
 import FaceIdCameraFeed from "@/components/FaceIdCameraFeed";
 import ModeSwitcher, { type Mode } from "@/components/ModeSwitcher";
+import DebugModeToggle from "@/components/DebugModeToggle";
 import { useLanguage } from "@/lib/i18n";
 
 const heroSubtitleKey: Record<Mode, string> = {
@@ -50,6 +51,7 @@ export default function Home() {
             <ModeSwitcher mode={mode} onChange={setMode} />
             <LanguageToggle />
             <ThemeToggle />
+            <DebugModeToggle />
           </div>
         </header>
 

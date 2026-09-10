@@ -36,6 +36,8 @@ const dictionaries: Record<Language, Dictionary> = {
     "theme.light": "Claro",
     "theme.dark": "Escuro",
     "theme.system": "Sistema",
+    "debug.show": "Mostrar números de diagnóstico",
+    "debug.hide": "Esconder números de diagnóstico",
     "footer.privacy":
       "Privacidade em primeiro lugar: o vídeo nunca sai do teu dispositivo.",
     "footer.developedBy": "Desenvolvido por",
@@ -96,6 +98,8 @@ const dictionaries: Record<Language, Dictionary> = {
     "theme.light": "Light",
     "theme.dark": "Dark",
     "theme.system": "System",
+    "debug.show": "Show diagnostic numbers",
+    "debug.hide": "Hide diagnostic numbers",
     "footer.privacy": "Privacy first: video never leaves your device.",
     "footer.developedBy": "Developed by",
     "mode.hands": "Hands",

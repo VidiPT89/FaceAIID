@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/lib/i18n";
+import { useDebugMode } from "@/lib/debugMode";
 import { getFaceLandmarker } from "@/lib/mediapipe/faceLandmarker";
 import { ExpressionBaselineTracker, computeExpressionScores, type ExpressionScores, type FacialExpression } from "@/lib/gestures/facialExpressions";
 import { HeadMovementTracker, matrixToEuler, type HeadMovement } from "@/lib/gestures/headMovement";
@@ -34,6 +35,7 @@ interface FaceConnectionSets {
 
 export default function FaceCameraFeed() {
   const { t } = useLanguage();
+  const { debugMode } = useDebugMode();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const landmarkerRef = useRef<import("@mediapipe/tasks-vision").FaceLandmarker | null>(null);
@@ -244,11 +246,10 @@ export default function FaceCameraFeed() {
           )}
         </AnimatePresence>
 
-        {status === "running" && (
+        {status === "running" && (loopError || debugMode) && (
           <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-mono text-white/90 leading-tight">
-            {loopError ? (
-              `error: ${loopError}`
-            ) : (
+            {loopError && <div>error: {loopError}</div>}
+            {debugMode && (
               <>
                 <div>face: {faceDetected ? "yes" : "no"}</div>
                 {scores && (

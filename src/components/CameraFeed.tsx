@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/lib/i18n";
+import { useDebugMode } from "@/lib/debugMode";
 import { classifyHandGesture, computeHandDebugInfo, type HandDebugInfo, type HandGesture } from "@/lib/gestures/handGestures";
 import { getHandLandmarker } from "@/lib/mediapipe/handLandmarker";
 
@@ -31,6 +32,7 @@ const gestureLabelKey: Record<HandGesture, string> = {
 
 export default function CameraFeed() {
   const { t } = useLanguage();
+  const { debugMode } = useDebugMode();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const landmarkerRef = useRef<import("@mediapipe/tasks-vision").HandLandmarker | null>(null);
@@ -223,10 +225,11 @@ export default function CameraFeed() {
           )}
         </AnimatePresence>
 
-        {status === "running" && (
+        {status === "running" && (loopError || debugMode) && (
           <div className="absolute top-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono text-white/90">
-            <div>{loopError ? `error: ${loopError}` : `hands: ${hands.length}`}</div>
-            {handDebug && (
+            {loopError && <div>error: {loopError}</div>}
+            {debugMode && <div>hands: {hands.length}</div>}
+            {debugMode && handDebug && (
               <div>
                 thumb {handDebug.thumbAngle.toFixed(0)}° ({handDebug.thumbExtended ? "out" : "in"}) · pinch{" "}
                 {handDebug.pinch.toFixed(2)}
