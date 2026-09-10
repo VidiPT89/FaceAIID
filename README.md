@@ -67,7 +67,10 @@ Switch language and appearance at any time from the header.
 ```bash
 npm run build
 npm run lint
+npm run test
 ```
+
+Unit tests ([Vitest](https://vitest.dev)) cover the pure gesture and expression classifiers in `src/lib/gestures/` — no camera or browser needed, since those are the parts most sensitive to threshold/geometry regressions.
 
 ## 📄 License
 
