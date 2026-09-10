@@ -8,9 +8,10 @@ import {
   describeFace,
   saveKnownFace,
   matchFace,
-  getKnownFaces,
+  getKnownFaceNames,
+  sampleCountFor,
   deleteKnownFace,
-  type KnownFace,
+  MAX_SAMPLES_PER_PERSON,
 } from "@/lib/faceId/faceRecognition";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
@@ -25,7 +26,7 @@ export default function FaceIdCameraFeed() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [match, setMatch] = useState<{ name: string; distance: number } | null>(null);
-  const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
+  const [knownFaces, setKnownFaces] = useState<string[]>([]);
   const [nameInput, setNameInput] = useState("");
   const [registering, setRegistering] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export default function FaceIdCameraFeed() {
     // client-side, so the first render must match the server (empty list)
     // before this runs, avoiding a hydration mismatch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setKnownFaces(getKnownFaces());
+    setKnownFaces(getKnownFaceNames());
   }, []);
 
   const stop = useCallback(() => {
@@ -117,9 +118,9 @@ export default function FaceIdCameraFeed() {
         return;
       }
       saveKnownFace(name, result.descriptor);
-      setKnownFaces(getKnownFaces());
+      setKnownFaces(getKnownFaceNames());
       setNameInput("");
-      setFeedback(t("faceId.registered").replace("{name}", name));
+      setFeedback(`${t("faceId.sampleSaved")} (${sampleCountFor(name)}/${MAX_SAMPLES_PER_PERSON})`);
     } finally {
       setRegistering(false);
     }
@@ -127,7 +128,7 @@ export default function FaceIdCameraFeed() {
 
   const handleDelete = useCallback((name: string) => {
     deleteKnownFace(name);
-    setKnownFaces(getKnownFaces());
+    setKnownFaces(getKnownFaceNames());
   }, []);
 
   return (
@@ -210,16 +211,16 @@ export default function FaceIdCameraFeed() {
 
       {knownFaces.length > 0 && (
         <div className="flex flex-wrap justify-center gap-2 max-w-md">
-          {knownFaces.map((face) => (
+          {knownFaces.map((name) => (
             <span
-              key={face.name}
+              key={name}
               className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs"
             >
-              {face.name}
+              {name}
               <button
-                onClick={() => handleDelete(face.name)}
+                onClick={() => handleDelete(name)}
                 className="text-foreground-muted hover:text-accent-3"
-                aria-label={`${t("faceId.remove")} ${face.name}`}
+                aria-label={`${t("faceId.remove")} ${name}`}
               >
                 ×
               </button>

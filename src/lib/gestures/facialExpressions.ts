@@ -69,9 +69,21 @@ export class ExpressionBaselineTracker {
    *  drift (lighting, camera angle, a different person) within seconds. */
   private readonly adaptRate = 0.02;
 
+  /** Hysteresis on top of the per-frame classification: a result only
+   *  becomes the displayed expression once it repeats for `requiredStreak`
+   *  frames in a row, so a single flipped frame right at a threshold
+   *  boundary doesn't flash a visibly wrong badge before correcting itself. */
+  private displayed: FacialExpression = "none";
+  private pending: FacialExpression = "none";
+  private pendingStreak = 0;
+  private readonly requiredStreak = 3;
+
   reset() {
     this.baseline = null;
     this.smoothed = null;
+    this.displayed = "none";
+    this.pending = "none";
+    this.pendingStreak = 0;
   }
 
   classify(scores: ExpressionScores): FacialExpression {
@@ -134,6 +146,15 @@ export class ExpressionBaselineTracker {
       };
     }
 
-    return expression;
+    if (expression === this.pending) {
+      this.pendingStreak += 1;
+    } else {
+      this.pending = expression;
+      this.pendingStreak = 1;
+    }
+    if (this.pendingStreak >= this.requiredStreak) {
+      this.displayed = expression;
+    }
+    return this.displayed;
   }
 }

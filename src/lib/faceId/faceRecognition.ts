@@ -2,7 +2,16 @@
 
 const STORAGE_KEY = "faceaiid-known-faces";
 const MATCH_THRESHOLD = 0.5; // lower = stricter; face-api's own default is 0.6
+/** Capped so repeatedly re-registering the same person doesn't grow
+ *  localStorage unboundedly; the oldest sample is dropped once hit. */
+export const MAX_SAMPLES_PER_PERSON = 5;
 
+/** One stored sample. A person accumulates several of these across repeated
+ *  "Register face" presses (different angle/lighting each time) instead of
+ *  one registration overwriting the rest — matching against the best of
+ *  several samples per person is meaningfully more robust than a single
+ *  snapshot, given how sensitive a single face descriptor is to pose and
+ *  lighting. */
 export interface KnownFace {
   name: string;
   descriptor: number[];
@@ -48,9 +57,32 @@ export function getKnownFaces(): KnownFace[] {
 }
 
 export function saveKnownFace(name: string, descriptor: Float32Array) {
-  const faces = getKnownFaces().filter((f) => f.name !== name);
-  faces.push({ name, descriptor: Array.from(descriptor) });
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(faces));
+  const all = getKnownFaces();
+  const samplesForName = all.filter((f) => f.name === name);
+  samplesForName.push({ name, descriptor: Array.from(descriptor) });
+  if (samplesForName.length > MAX_SAMPLES_PER_PERSON) {
+    samplesForName.splice(0, samplesForName.length - MAX_SAMPLES_PER_PERSON);
+  }
+  const others = all.filter((f) => f.name !== name);
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...others, ...samplesForName]));
+}
+
+export function sampleCountFor(name: string): number {
+  return getKnownFaces().filter((f) => f.name === name).length;
+}
+
+/** One row per distinct registered person, for UI lists — collapses the
+ *  (possibly several) samples behind each name into one entry. */
+export function getKnownFaceNames(): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const face of getKnownFaces()) {
+    if (!seen.has(face.name)) {
+      seen.add(face.name);
+      names.push(face.name);
+    }
+  }
+  return names;
 }
 
 export function deleteKnownFace(name: string) {
