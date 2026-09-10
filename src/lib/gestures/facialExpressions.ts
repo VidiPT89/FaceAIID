@@ -69,21 +69,27 @@ export class ExpressionBaselineTracker {
    *  drift (lighting, camera angle, a different person) within seconds. */
   private readonly adaptRate = 0.02;
 
-  /** Hysteresis on top of the per-frame classification: a result only
-   *  becomes the displayed expression once it repeats for `requiredStreak`
-   *  frames in a row, so a single flipped frame right at a threshold
-   *  boundary doesn't flash a visibly wrong badge before correcting itself. */
-  private displayed: FacialExpression = "none";
-  private pending: FacialExpression = "none";
-  private pendingStreak = 0;
-  private readonly requiredStreak = 3;
+  /** Hysteresis on top of the per-frame classification: the displayed
+   *  expression is the most common result over the last few frames instead
+   *  of the raw per-frame value.
+   *
+   *  An earlier version required a classification to repeat for 3
+   *  *consecutive* frames before it could be displayed — that turned out to
+   *  be a real bug, not just an over-cautious setting: a real held
+   *  expression is never perfectly stable frame-to-frame even after
+   *  smoothing (an occasional frame reads as "none" as the mouth/eyes move
+   *  slightly), and any single outlier frame reset the whole streak back to
+   *  zero. In practice this meant a genuinely held expression could stay
+   *  stuck showing "none" indefinitely. A small majority vote tolerates
+   *  that kind of one-off noise instead of being wiped out by it. */
+  private recentWindow: FacialExpression[] = [];
+  private readonly windowSize = 5;
+  private readonly requiredVotes = 3;
 
   reset() {
     this.baseline = null;
     this.smoothed = null;
-    this.displayed = "none";
-    this.pending = "none";
-    this.pendingStreak = 0;
+    this.recentWindow = [];
   }
 
   classify(scores: ExpressionScores): FacialExpression {
@@ -134,7 +140,39 @@ export class ExpressionBaselineTracker {
     else if (smile) expression = "smile";
     else if (blink) expression = "blink";
 
-    if (expression === "none") {
+    this.recentWindow.push(expression);
+    if (this.recentWindow.length > this.windowSize) {
+      this.recentWindow.splice(0, this.recentWindow.length - this.windowSize);
+    }
+
+    const voteCounts = new Map<FacialExpression, number>();
+    for (const vote of this.recentWindow) {
+      voteCounts.set(vote, (voteCounts.get(vote) ?? 0) + 1);
+    }
+    // Among non-"none" expressions that reach the required vote count, pick
+    // the most frequent one — a real expression should dominate its own
+    // window even with a little frame-to-frame noise; "none" only wins when
+    // nothing else clears the bar.
+    let winner: FacialExpression | null = null;
+    let winnerVotes = 0;
+    for (const [candidate, votes] of voteCounts) {
+      if (candidate === "none" || votes < this.requiredVotes) continue;
+      if (votes > winnerVotes) {
+        winner = candidate;
+        winnerVotes = votes;
+      }
+    }
+
+    const displayed = winner ?? "none";
+
+    // Freeze the baseline on the *displayed* (post-vote) result, not the
+    // raw instant one: an earlier version froze on the raw per-frame value,
+    // so an occasional weak/neutral-reading frame in the middle of a
+    // genuinely held expression let the baseline creep toward it and, over
+    // several such dips, gradually cancel out the real signal — the
+    // expression would eventually stop registering even though the face
+    // never actually changed.
+    if (displayed === "none") {
       this.baseline = {
         smile: base.smile + smileDelta * this.adaptRate,
         frown: base.frown + frownDelta * this.adaptRate,
@@ -146,15 +184,6 @@ export class ExpressionBaselineTracker {
       };
     }
 
-    if (expression === this.pending) {
-      this.pendingStreak += 1;
-    } else {
-      this.pending = expression;
-      this.pendingStreak = 1;
-    }
-    if (this.pendingStreak >= this.requiredStreak) {
-      this.displayed = expression;
-    }
-    return this.displayed;
+    return displayed;
   }
 }

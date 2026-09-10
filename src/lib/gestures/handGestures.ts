@@ -168,3 +168,41 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
 
   return "none";
 }
+
+/**
+ * Smooths the classified gesture over the last few frames via a majority
+ * vote, the same fix applied to `ExpressionBaselineTracker` this session:
+ * showing the raw per-frame classification directly meant a single frame
+ * where the hand's angle relative to the camera briefly pushed one finger
+ * across a threshold (very possible even while holding a shape steady)
+ * flashed the wrong gesture, or "none", before correcting itself a frame
+ * later. One instance of this per tracked hand (by array position, since
+ * MediaPipe doesn't give hands a stable identity across frames).
+ */
+export class HandGestureStabilizer {
+  private recentWindow: HandGesture[] = [];
+  private readonly windowSize = 5;
+  private readonly requiredVotes = 3;
+
+  push(gesture: HandGesture): HandGesture {
+    this.recentWindow.push(gesture);
+    if (this.recentWindow.length > this.windowSize) {
+      this.recentWindow.splice(0, this.recentWindow.length - this.windowSize);
+    }
+
+    const voteCounts = new Map<HandGesture, number>();
+    for (const vote of this.recentWindow) {
+      voteCounts.set(vote, (voteCounts.get(vote) ?? 0) + 1);
+    }
+    let winner: HandGesture | null = null;
+    let winnerVotes = 0;
+    for (const [candidate, votes] of voteCounts) {
+      if (candidate === "none" || votes < this.requiredVotes) continue;
+      if (votes > winnerVotes) {
+        winner = candidate;
+        winnerVotes = votes;
+      }
+    }
+    return winner ?? "none";
+  }
+}

@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/lib/i18n";
 import { useDebugMode } from "@/lib/debugMode";
-import { classifyHandGesture, computeHandDebugInfo, type HandDebugInfo, type HandGesture } from "@/lib/gestures/handGestures";
+import {
+  classifyHandGesture,
+  computeHandDebugInfo,
+  HandGestureStabilizer,
+  type HandDebugInfo,
+  type HandGesture,
+} from "@/lib/gestures/handGestures";
 import { getHandLandmarker } from "@/lib/mediapipe/handLandmarker";
 
 type Status = "idle" | "loading" | "running" | "denied" | "error";
@@ -40,6 +46,9 @@ export default function CameraFeed() {
   const connectionsRef = useRef<{ start: number; end: number }[]>([]);
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // One stabilizer per tracked hand slot (by array position — MediaPipe
+  // doesn't give hands a stable identity across frames).
+  const stabilizersRef = useRef<HandGestureStabilizer[]>([]);
 
   const [status, setStatus] = useState<Status>("idle");
   const [hands, setHands] = useState<DetectedHand[]>([]);
@@ -51,6 +60,7 @@ export default function CameraFeed() {
     rafRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    stabilizersRef.current = [];
     setStatus("idle");
     setHands([]);
   }, []);
@@ -110,7 +120,9 @@ export default function CameraFeed() {
             radius: 4,
           });
 
-          const gesture = classifyHandGesture(landmarks);
+          const rawGesture = classifyHandGesture(landmarks);
+          if (!stabilizersRef.current[i]) stabilizersRef.current[i] = new HandGestureStabilizer();
+          const gesture = stabilizersRef.current[i].push(rawGesture);
 
           // MediaPipe's handedness assumes a mirrored (selfie) input image;
           // our video frame is fed to the model un-mirrored (we only mirror
@@ -124,6 +136,7 @@ export default function CameraFeed() {
           if (i === 0) firstHandDebug = computeHandDebugInfo(landmarks);
         });
       }
+      stabilizersRef.current.length = detectedHands.length;
 
       ctx.restore();
       setHands(detectedHands);

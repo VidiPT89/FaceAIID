@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyHandGesture } from "@/lib/gestures/handGestures";
+import { classifyHandGesture, HandGestureStabilizer } from "@/lib/gestures/handGestures";
 
 interface Point {
   x: number;
@@ -195,5 +195,46 @@ describe("classifyHandGesture", () => {
     hand[20] = pinky.tip;
 
     expect(classifyHandGesture(hand)).toBe("letterO");
+  });
+});
+
+describe("HandGestureStabilizer", () => {
+  it("stays 'none' until a gesture repeats enough times", () => {
+    const stabilizer = new HandGestureStabilizer();
+    expect(stabilizer.push("openPalm")).toBe("none");
+    expect(stabilizer.push("openPalm")).toBe("none");
+    expect(stabilizer.push("openPalm")).toBe("openPalm");
+  });
+
+  it("tolerates an occasional misclassified frame in an otherwise held gesture", () => {
+    // Regression test for the same class of bug fixed in
+    // ExpressionBaselineTracker: showing the raw per-frame classification
+    // directly means a single frame where the hand's angle briefly pushes
+    // one finger across a threshold flashes the wrong gesture (or "none")
+    // before correcting itself. A majority vote over a small window must
+    // tolerate that instead of losing the real gesture entirely.
+    const stabilizer = new HandGestureStabilizer();
+    const sequence: Array<Parameters<HandGestureStabilizer["push"]>[0]> = [
+      "openPalm",
+      "openPalm",
+      "none",
+      "openPalm",
+      "openPalm",
+      "pointing",
+      "openPalm",
+    ];
+    let last: ReturnType<HandGestureStabilizer["push"]> = "none";
+    for (const gesture of sequence) {
+      last = stabilizer.push(gesture);
+    }
+    expect(last).toBe("openPalm");
+  });
+
+  it("switches to a new gesture once it dominates the window", () => {
+    const stabilizer = new HandGestureStabilizer();
+    for (let i = 0; i < 5; i++) stabilizer.push("openPalm");
+    let last: ReturnType<HandGestureStabilizer["push"]> = "none";
+    for (let i = 0; i < 5; i++) last = stabilizer.push("closedFist");
+    expect(last).toBe("closedFist");
   });
 });

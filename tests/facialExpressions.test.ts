@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ExpressionBaselineTracker, type ExpressionScores } from "@/lib/gestures/facialExpressions";
+import { ExpressionBaselineTracker, type ExpressionScores, type FacialExpression } from "@/lib/gestures/facialExpressions";
 
 const neutral: ExpressionScores = {
   smile: 0.1,
@@ -99,6 +99,32 @@ describe("ExpressionBaselineTracker", () => {
     // dramatically different first frame must read as "none" rather than
     // immediately re-triggering the previous classification.
     expect(tracker.classify(smiling)).toBe("none");
+  });
+
+  it("keeps showing a held expression despite occasional neutral-reading frames", () => {
+    // Regression test for a real bug found this session: an earlier version
+    // required 3 *consecutive* identical frames before switching the
+    // displayed expression. A real held expression is never perfectly
+    // stable frame-to-frame — an occasional frame reads back as neutral as
+    // the face moves slightly — and that reset the whole streak to zero
+    // every time, so a genuinely held expression could get stuck showing
+    // "none" forever. A majority vote over a small window must tolerate
+    // this instead.
+    const tracker = new ExpressionBaselineTracker();
+    feed(tracker, neutral, 10);
+    // A mild smile, close enough to the detection threshold that the
+    // smoothing filter's dip on each interspersed neutral-reading frame
+    // actually pulls the instant per-frame classification back to "none" —
+    // this is what makes the test exercise the majority-vote window itself,
+    // not just the smoothing filter's own noise tolerance.
+    const smiling: ExpressionScores = { ...neutral, smile: neutral.smile + 0.2 };
+    let last: FacialExpression = "none";
+    for (let i = 0; i < 30; i++) {
+      // Four smiling frames for every one neutral-reading frame, mimicking
+      // real noise around a genuinely held expression.
+      last = tracker.classify(i % 5 === 0 ? neutral : smiling);
+    }
+    expect(last).toBe("smile");
   });
 
   it("adapts its baseline to a different resting face over time", () => {
