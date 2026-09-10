@@ -8,6 +8,7 @@ export type HandGesture =
   | "threeFingers"
   | "shaka"
   | "iLoveYou"
+  | "letterI"
   | "letterL"
   | "letterO"
   | "none";
@@ -119,6 +120,14 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
   // angle, other three fingers closed.
   if (thumbExtended && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
     return "letterL";
+  }
+
+  // ASL/LGP fingerspelling letter "I": only the pinky extended, everything
+  // else (including the thumb) closed. Checked before the closedFist
+  // fallback below, which would otherwise claim this shape (only 1 non-thumb
+  // finger extended).
+  if (pinkyExtended && !thumbExtended && !indexExtended && !middleExtended && !ringExtended) {
+    return "letterI";
   }
 
   if (thumbExtended && nonThumbExtendedCount === 0) {

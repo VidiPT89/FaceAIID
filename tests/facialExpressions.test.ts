@@ -127,6 +127,21 @@ describe("ExpressionBaselineTracker", () => {
     expect(last).toBe("smile");
   });
 
+  it("doesn't get permanently stuck on a natural facial asymmetry", () => {
+    // Regression test for a real bug reported this session: a user with a
+    // normal, neutral face was told they were "sad". Once the baseline
+    // learned an initial neutral, a face whose natural resting asymmetry
+    // crossed one of the expression thresholds (very common — few real
+    // faces are perfectly symmetric) got permanently displayed as that
+    // expression: the baseline only adapted on "none" frames, so once
+    // locked onto a non-none display it never had a chance to learn that
+    // this *was* the neutral face all along.
+    const tracker = new ExpressionBaselineTracker();
+    feed(tracker, neutral, 10); // seed a baseline from a different, truly neutral face first
+    const asymmetricButNeutral: ExpressionScores = { ...neutral, frown: neutral.frown + 0.2 };
+    expect(feed(tracker, asymmetricButNeutral, 300)).toBe("none");
+  });
+
   it("adapts its baseline to a different resting face over time", () => {
     // A face with a naturally different resting mouth-corner score should
     // settle back to "none" once treated as the new neutral, instead of

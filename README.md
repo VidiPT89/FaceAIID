@@ -6,9 +6,9 @@
 
 ## ✨ Features
 
-- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, the ASL/LGP "I love you" sign, and the fingerspelling letters L and O
-- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, which needs a sequence model that tracks movement and orientation over time, not a single-frame classifier (most fingerspelling letters, e.g. J or Z, also need motion and aren't included)
-- ✅ Facial expression recognition — smile, sad, surprised, angry, blinking — via 52 MediaPipe blendshapes
+- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, the ASL/LGP "I love you" sign, and the fingerspelling letters I, L and O
+- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, and **not** the full fingerspelling alphabet. Real sign language (and most fingerspelling letters, e.g. A, B, C, J, Z) needs a sequence model trained on real examples, not a single-frame geometric classifier — this app only recognizes the handful of shapes above, each hand-coded from its finger angles
+- ✅ Facial expression recognition — smile, sad, surprised, angry, blinking — via 52 MediaPipe blendshapes. Tongue-out is **not** detected: MediaPipe's face blendshapes don't track the tongue at all, so there's no signal to build this on
 - ✅ Head movement recognition — nodding yes, shaking no, head tilt — from the face's 3D transformation matrix
 - ✅ Face identification — register a face and get recognized afterwards, entirely client-side (face-api.js), stored only in `localStorage`
 - ✅ On-device inference throughout — MediaPipe Tasks Vision + face-api.js, no video or biometric data ever leaves the browser

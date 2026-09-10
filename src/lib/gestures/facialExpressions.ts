@@ -68,6 +68,21 @@ export class ExpressionBaselineTracker {
    *  by getting absorbed into the baseline; fast enough to track real
    *  drift (lighting, camera angle, a different person) within seconds. */
   private readonly adaptRate = 0.02;
+  /** A much slower adaptation rate applied even while an expression is
+   *  currently displayed. Without this, a face whose natural resting
+   *  asymmetry sits just past one of the thresholds below (many real faces
+   *  aren't perfectly symmetric) could get permanently stuck showing that
+   *  expression: once displayed is non-none the baseline stopped updating
+   *  entirely, so it never had a chance to learn that this *was* the
+   *  neutral face all along. Adapting 20x slower here still lets a held
+   *  expression register normally for as long as someone actually holds
+   *  it, but a trait that never goes away eventually gets absorbed into
+   *  the baseline instead of reporting a permanent false expression (about
+   *  200-250 frames, ~7-8 seconds at 30fps, to fully absorb a typical
+   *  threshold-sized deviation — fast enough to not leave someone mislabeled
+   *  for long, slow enough that a genuinely held few-second expression
+   *  doesn't get erased mid-hold). */
+  private readonly slowAdaptRate = 0.004;
 
   /** Hysteresis on top of the per-frame classification: the displayed
    *  expression is the most common result over the last few frames instead
@@ -171,18 +186,19 @@ export class ExpressionBaselineTracker {
     // genuinely held expression let the baseline creep toward it and, over
     // several such dips, gradually cancel out the real signal — the
     // expression would eventually stop registering even though the face
-    // never actually changed.
-    if (displayed === "none") {
-      this.baseline = {
-        smile: base.smile + smileDelta * this.adaptRate,
-        frown: base.frown + frownDelta * this.adaptRate,
-        browDown: base.browDown + browDownDelta * this.adaptRate,
-        browInnerUp: base.browInnerUp + browInnerUpDelta * this.adaptRate,
-        jawOpen: base.jawOpen + jawOpenDelta * this.adaptRate,
-        eyeWide: base.eyeWide + eyeWideDelta * this.adaptRate,
-        blink: base.blink,
-      };
-    }
+    // never actually changed. Still adapts (just much slower) even while
+    // non-none, so a permanent trait doesn't get stuck reporting a false
+    // expression forever — see slowAdaptRate.
+    const rate = displayed === "none" ? this.adaptRate : this.slowAdaptRate;
+    this.baseline = {
+      smile: base.smile + smileDelta * rate,
+      frown: base.frown + frownDelta * rate,
+      browDown: base.browDown + browDownDelta * rate,
+      browInnerUp: base.browInnerUp + browInnerUpDelta * rate,
+      jawOpen: base.jawOpen + jawOpenDelta * rate,
+      eyeWide: base.eyeWide + eyeWideDelta * rate,
+      blink: base.blink,
+    };
 
     return displayed;
   }

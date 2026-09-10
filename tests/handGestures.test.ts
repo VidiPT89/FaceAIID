@@ -117,6 +117,11 @@ describe("classifyHandGesture", () => {
     expect(classifyHandGesture(hand)).toBe("thumbsDown");
   });
 
+  it("recognizes the fingerspelling letter I", () => {
+    const hand = buildHand({ ...allCurledUp, pinky: { extended: true } });
+    expect(classifyHandGesture(hand)).toBe("letterI");
+  });
+
   it("recognizes a peace sign", () => {
     const hand = buildHand({
       ...allCurledUp,
