@@ -155,6 +155,15 @@ describe("classifyHandGesture", () => {
     expect(classifyHandGesture(hand)).toBe("shaka");
   });
 
+  it("recognizes rock on / horns", () => {
+    const hand = buildHand({
+      ...allCurledUp,
+      index: { extended: true },
+      pinky: { extended: true },
+    });
+    expect(classifyHandGesture(hand)).toBe("rockOn");
+  });
+
   it("recognizes the ASL/LGP 'I love you' sign", () => {
     const hand = buildHand({
       ...allCurledUp,

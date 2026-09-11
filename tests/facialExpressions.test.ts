@@ -89,6 +89,17 @@ describe("ExpressionBaselineTracker", () => {
     expect(feed(tracker, blinking, 5)).toBe("blink");
   });
 
+  it("displays a blink on a single frame, without waiting for the majority vote", () => {
+    // A real blink lasts only 1-2 frames — far too brief to win the 3-of-5
+    // majority vote used for held expressions. Regression test: blink must
+    // bypass the vote entirely, unlike a held expression which needs 3
+    // repeated frames to display.
+    const tracker = new ExpressionBaselineTracker();
+    feed(tracker, neutral, 10);
+    const blinking: ExpressionScores = { ...neutral, blink: 0.9 };
+    expect(tracker.classify(blinking)).toBe("blink");
+  });
+
   it("resets its learned baseline and hysteresis state", () => {
     const tracker = new ExpressionBaselineTracker();
     feed(tracker, neutral, 10);

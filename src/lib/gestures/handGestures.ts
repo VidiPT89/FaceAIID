@@ -11,6 +11,7 @@ export type HandGesture =
   | "letterI"
   | "letterL"
   | "letterO"
+  | "rockOn"
   | "none";
 
 interface Point {
@@ -146,6 +147,14 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
   // ASL "I love you": thumb, index and pinky extended, middle and ring closed.
   if (thumbExtended && indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
     return "iLoveYou";
+  }
+
+  // "Rock on" / horns: index and pinky extended, thumb tucked in (unlike
+  // shaka above, which needs the thumb extended too) — checked after
+  // iLoveYou/shaka since both also involve the pinky, to avoid claiming
+  // their shapes when the thumb happens to read as borderline-extended.
+  if (!thumbExtended && indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
+    return "rockOn";
   }
 
   // Peace sign / V / number 2: index and middle only.

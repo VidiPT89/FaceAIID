@@ -34,6 +34,7 @@ const gestureLabelKey: Record<HandGesture, string> = {
   letterI: "gesture.letterI",
   letterL: "gesture.letterL",
   letterO: "gesture.letterO",
+  rockOn: "gesture.rockOn",
   none: "gesture.none",
 };
 

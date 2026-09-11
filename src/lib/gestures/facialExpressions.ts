@@ -178,7 +178,13 @@ export class ExpressionBaselineTracker {
       }
     }
 
-    const displayed = winner ?? "none";
+    // A real blink only lasts 1-2 frames at typical camera framerates — far
+    // too brief to ever win a 3-of-5 majority vote. Waiting for the vote
+    // window meant blink essentially never displayed at all, no matter how
+    // deliberately/slowly someone blinked. It bypasses the vote and displays
+    // immediately off the smoothed per-frame signal instead, same as any
+    // other instantaneous (rather than held) cue.
+    const displayed = expression === "blink" ? "blink" : winner ?? "none";
 
     // Freeze the baseline on the *displayed* (post-vote) result, not the
     // raw instant one: an earlier version froze on the raw per-frame value,
