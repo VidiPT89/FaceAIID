@@ -8,6 +8,9 @@ export type HandGesture =
   | "threeFingers"
   | "shaka"
   | "iLoveYou"
+  | "letterA"
+  | "letterD"
+  | "letterF"
   | "letterI"
   | "letterL"
   | "letterO"
@@ -117,6 +120,22 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
     return "letterO";
   }
 
+  // ASL/LGP fingerspelling letter "F": thumb and index pinched exactly like
+  // "O" above, but middle/ring/pinky extended straight out instead of
+  // curled — the pinch is what separates the two, not finger-extension
+  // state alone.
+  if (thumbIndexPinch < 0.22 && middleExtended && ringExtended && pinkyExtended) {
+    return "letterF";
+  }
+
+  // ASL/LGP fingerspelling letter "D": index extended straight up, thumb
+  // curled in to touch the middle fingertip (not the index tip, which is
+  // what distinguishes it from "pointing" below), ring and pinky curled.
+  const thumbMiddlePinch = distance(landmarks[4], landmarks[12]) / handScale;
+  if (thumbMiddlePinch < 0.25 && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    return "letterD";
+  }
+
   // ASL/LGP fingerspelling letter "L": thumb and index extended at a right
   // angle, other three fingers closed.
   if (thumbExtended && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
@@ -136,6 +155,12 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
     const thumbMcp = landmarks[2];
     if (thumbTip.y < thumbMcp.y - 0.02) return "thumbsUp";
     if (thumbTip.y > thumbMcp.y + 0.02) return "thumbsDown";
+    // ASL/LGP fingerspelling letter "A": same fist-with-extended-thumb
+    // shape as thumbs up/down, but held roughly horizontal instead of
+    // pointing up or down — without this case the shape fell through to
+    // "none", matching neither the y-thresholds above nor closedFist below
+    // (which requires the thumb not extended).
+    return "letterA";
   }
 
   // Shaka / ASL-LGP "Y": thumb and pinky extended, the three middle fingers

@@ -210,6 +210,67 @@ describe("classifyHandGesture", () => {
 
     expect(classifyHandGesture(hand)).toBe("letterO");
   });
+
+  it("recognizes the fingerspelling letter F", () => {
+    // Same thumb-index pinch as "O" above, but middle/ring/pinky extended
+    // instead of curled — the pinch is what separates the two.
+    const hand: Point[] = new Array(21).fill(null).map(() => ({ x: 0, y: 0, z: 0 }));
+    hand[0] = wrist;
+    hand[2] = mcp.thumb;
+    hand[3] = { x: 0.37, y: 0.63, z: 0 };
+    hand[4] = { x: 0.4, y: 0.6, z: 0 };
+    hand[5] = mcp.index;
+    hand[6] = { x: 0.43, y: 0.63, z: 0 };
+    hand[8] = { x: 0.4, y: 0.6, z: 0 };
+    const middle = extended(mcp.middle, UP);
+    hand[9] = mcp.middle;
+    hand[10] = middle.pip;
+    hand[12] = middle.tip;
+    const ring = extended(mcp.ring, UP);
+    hand[13] = mcp.ring;
+    hand[14] = ring.pip;
+    hand[16] = ring.tip;
+    const pinky = extended(mcp.pinky, UP);
+    hand[17] = mcp.pinky;
+    hand[18] = pinky.pip;
+    hand[20] = pinky.tip;
+
+    expect(classifyHandGesture(hand)).toBe("letterF");
+  });
+
+  it("recognizes the fingerspelling letter D", () => {
+    // Index extended straight up; thumb bent in to touch the middle
+    // fingertip (not the index tip, which would otherwise read as
+    // "pointing"); ring and pinky curled.
+    const hand: Point[] = new Array(21).fill(null).map(() => ({ x: 0, y: 0, z: 0 }));
+    hand[0] = wrist;
+    const index = extended(mcp.index, UP);
+    hand[5] = mcp.index;
+    hand[6] = index.pip;
+    hand[8] = index.tip;
+    const middle = curled(mcp.middle, UP);
+    hand[9] = mcp.middle;
+    hand[10] = middle.pip;
+    hand[12] = middle.tip;
+    hand[2] = mcp.thumb;
+    hand[3] = { x: (mcp.thumb.x + middle.tip.x) / 2, y: (mcp.thumb.y + middle.tip.y) / 2, z: 0 };
+    hand[4] = middle.tip;
+    const ring = curled(mcp.ring, UP);
+    hand[13] = mcp.ring;
+    hand[14] = ring.pip;
+    hand[16] = ring.tip;
+    const pinky = curled(mcp.pinky, UP);
+    hand[17] = mcp.pinky;
+    hand[18] = pinky.pip;
+    hand[20] = pinky.tip;
+
+    expect(classifyHandGesture(hand)).toBe("letterD");
+  });
+
+  it("recognizes the fingerspelling letter A", () => {
+    const hand = buildHand({ ...allCurledUp, thumb: { extended: true, dir: { x: -1, y: 0 } } });
+    expect(classifyHandGesture(hand)).toBe("letterA");
+  });
 });
 
 describe("HandGestureStabilizer", () => {

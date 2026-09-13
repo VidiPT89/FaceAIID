@@ -6,8 +6,8 @@
 
 ## ✨ Features
 
-- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, the ASL/LGP "I love you" sign, and the fingerspelling letters I, L and O
-- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, and **not** the full fingerspelling alphabet. Real sign language (and most fingerspelling letters, e.g. A, B, C, J, Z) needs a sequence model trained on real examples, not a single-frame geometric classifier — this app only recognizes the handful of shapes above, each hand-coded from its finger angles
+- ✅ Live hand gesture recognition for **multiple hands at once**, each labeled as your left/right hand (mirror-corrected) — thumbs up/down, open palm, closed fist, peace sign, pointing, three fingers (W), shaka, rock on, the ASL/LGP "I love you" sign, and the fingerspelling letters A, D, F, I, L and O
+- ✅ A curated set of static ASL/LGP-inspired hand shapes — **not** full sign-language recognition, and **not** the full fingerspelling alphabet. Real sign language (and most fingerspelling letters, e.g. B, C, J, Z) needs a sequence model trained on real examples or a way to measure finger curvature/overlap this classifier doesn't attempt — this app only recognizes the handful of shapes above, each hand-coded from its finger angles
 - ✅ Facial expression recognition — smile, sad, surprised, angry, blinking — via 52 MediaPipe blendshapes. Tongue-out is **not** detected: MediaPipe's face blendshapes don't track the tongue at all, so there's no signal to build this on
 - ✅ Head movement recognition — nodding yes, shaking no, head tilt — from the face's 3D transformation matrix
 - ✅ Face identification — register a face and get recognized afterwards, entirely client-side (face-api.js), stored only in `localStorage`
