@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { readStorage, writeStorage } from "@/lib/storage";
 
-export type Language = "pt" | "en";
+type Language = "pt" | "en";
 
 type Dictionary = Record<string, string>;
 

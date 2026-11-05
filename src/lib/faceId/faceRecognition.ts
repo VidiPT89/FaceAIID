@@ -14,7 +14,7 @@ export const MAX_SAMPLES_PER_PERSON = 5;
  *  several samples per person is meaningfully more robust than a single
  *  snapshot, given how sensitive a single face descriptor is to pose and
  *  lighting. */
-export interface KnownFace {
+interface KnownFace {
   name: string;
   descriptor: number[];
 }
