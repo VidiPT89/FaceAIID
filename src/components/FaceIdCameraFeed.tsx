@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import {
   loadFaceModels,
@@ -10,13 +10,18 @@ import {
   getKnownFaceNames,
   sampleCountFor,
   deleteKnownFace,
+  IdentityStabilizer,
   MAX_SAMPLES_PER_PERSON,
+  MIN_DETECTION_SCORE,
+  MIN_REGISTRATION_FACE_WIDTH,
+  MIN_REGISTRATION_SCORE,
 } from "@/lib/faceId/faceRecognition";
 import { useCameraLoop } from "@/lib/useCameraLoop";
 import CameraStage, { Badge, BadgeRow } from "@/components/CameraStage";
 
 export default function FaceIdCameraFeed() {
   const { t } = useLanguage();
+  const stabilizerRef = useRef(new IdentityStabilizer());
   const [matchName, setMatchName] = useState<string | null>(null);
   const [knownFaces, setKnownFaces] = useState<string[]>([]);
   const [nameInput, setNameInput] = useState("");
@@ -33,10 +38,17 @@ export default function FaceIdCameraFeed() {
 
   const onFrame = useCallback(async (video: HTMLVideoElement) => {
     const result = await describeFace(video);
-    setMatchName(result ? (matchFace(result.descriptor)?.name ?? null) : null);
+    if (!result) {
+      setMatchName(stabilizerRef.current.push(null));
+    } else if (result.detection.score >= MIN_DETECTION_SCORE) {
+      setMatchName(stabilizerRef.current.push(matchFace(result.descriptor)?.name ?? null));
+    }
+    // Otherwise the face is too turned or blurry to judge: keep showing
+    // the last decision rather than guessing.
   }, []);
 
   const onStop = useCallback(() => {
+    stabilizerRef.current.reset();
     setMatchName(null);
     setFeedback(null);
   }, []);
@@ -55,6 +67,11 @@ export default function FaceIdCameraFeed() {
       const result = await describeFace(video);
       if (!result) {
         setFeedback(t("faceId.noFaceDetected"));
+        return;
+      }
+      const faceWidth = result.detection.box.width / video.videoWidth;
+      if (result.detection.score < MIN_REGISTRATION_SCORE || faceWidth < MIN_REGISTRATION_FACE_WIDTH) {
+        setFeedback(t("faceId.lowQuality"));
         return;
       }
       if (!saveKnownFace(name, result.descriptor)) {

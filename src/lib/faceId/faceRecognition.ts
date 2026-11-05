@@ -3,7 +3,23 @@
 import { readStorage, writeStorage } from "@/lib/storage";
 
 const STORAGE_KEY = "faceaiid-known-faces";
-const MATCH_THRESHOLD = 0.5; // lower = stricter; face-api's own default is 0.6
+/** Lower = stricter; face-api's own default is 0.6. Measured on MediaPipe's
+ *  public portraits: the same person scored 0.14-0.24, different people
+ *  0.86-0.89 — 0.5 leaves a wide margin on both sides. */
+const MATCH_THRESHOLD = 0.5;
+/** A name is only given when the next-closest *other* person is at least
+ *  this much further away, so two similar registered faces don't flip-flop. */
+const MIN_MARGIN_TO_NEXT_PERSON = 0.08;
+/** Below this detection confidence the face is too turned or blurred for a
+ *  trustworthy descriptor (a 90°-rotated portrait detected at 0.71 scored
+ *  0.81 against the same person), so no identity decision is made. */
+export const MIN_DETECTION_SCORE = 0.8;
+/** Registration needs a clearer view than recognition: a sharp, frontal,
+ *  reasonably close face gives every later comparison a good reference. */
+export const MIN_REGISTRATION_SCORE = 0.9;
+/** Fraction of the frame width. A ~15 cm face fills 13-18% of a typical
+ *  ~70° webcam frame at 60-80 cm, so 10% allows up to about a metre away. */
+export const MIN_REGISTRATION_FACE_WIDTH = 0.1;
 /** Capped so repeatedly re-registering the same person doesn't grow
  *  localStorage unboundedly; the oldest sample is dropped once hit. */
 export const MAX_SAMPLES_PER_PERSON = 5;
@@ -32,7 +48,11 @@ export async function loadFaceModels() {
   if (modelsLoaded) return;
   const faceapi = await loadFaceApi();
   await Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+    // SSD MobileNet rather than the tiny detector: on MediaPipe's test
+    // portraits it found every face (tiny missed the rotated one) at 0.99+
+    // confidence instead of 0.93-0.96, and a better-placed face box gives a
+    // better-aligned descriptor.
+    faceapi.nets.ssdMobilenetv1.loadFromUri("/models"),
     faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
     faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
   ]);
@@ -42,7 +62,7 @@ export async function loadFaceModels() {
 export async function describeFace(input: HTMLVideoElement) {
   const faceapi = await loadFaceApi();
   const result = await faceapi
-    .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions())
+    .detectSingleFace(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
   return result ?? null;
@@ -112,13 +132,42 @@ function euclideanDistance(a: ArrayLike<number>, b: ArrayLike<number>): number {
 }
 
 export function matchFace(descriptor: Float32Array): { name: string; distance: number } | null {
-  let best: { name: string; distance: number } | null = null;
+  // Closest sample per person, then compare the two closest people.
+  const closest = new Map<string, number>();
   for (const face of getKnownFaces()) {
     const distance = euclideanDistance(descriptor, face.descriptor);
-    if (!best || distance < best.distance) {
-      best = { name: face.name, distance };
+    if (distance < (closest.get(face.name) ?? Infinity)) closest.set(face.name, distance);
+  }
+  const [best, runnerUp] = [...closest].sort((a, b) => a[1] - b[1]);
+  if (!best || best[1] > MATCH_THRESHOLD) return null;
+  if (runnerUp && runnerUp[1] - best[1] < MIN_MARGIN_TO_NEXT_PERSON) return null;
+  return { name: best[0], distance: best[1] };
+}
+
+/**
+ * Shows a name only once it wins most of the last few decisions, so one
+ * off frame (motion blur, a hand passing in front) doesn't flash "not
+ * recognized" or, worse, someone else's name.
+ */
+export class IdentityStabilizer {
+  private recent: (string | null)[] = [];
+  private readonly windowSize = 5;
+  private readonly requiredVotes = 3;
+  private shown: string | null = null;
+
+  push(name: string | null): string | null {
+    this.recent.push(name);
+    if (this.recent.length > this.windowSize) this.recent.shift();
+    const votes = new Map<string | null, number>();
+    for (const vote of this.recent) votes.set(vote, (votes.get(vote) ?? 0) + 1);
+    for (const [candidate, count] of votes) {
+      if (count >= this.requiredVotes) this.shown = candidate;
     }
+    return this.shown;
   }
 
-  return best && best.distance <= MATCH_THRESHOLD ? best : null;
+  reset() {
+    this.recent = [];
+    this.shown = null;
+  }
 }

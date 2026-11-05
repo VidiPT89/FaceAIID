@@ -63,4 +63,28 @@ describe("face recognition storage", () => {
     expect(faces.getKnownFaceNames()).toEqual([]);
     expect(data.get(STORAGE_KEY)).toBe("[]");
   });
+
+  it("gives no name when two registered people are almost equally close", async () => {
+    stubStorage();
+    const faces = await load();
+    faces.saveKnownFace("Ana", descriptor(0));
+    faces.saveKnownFace("Rui", descriptor(0.004));
+    // 0.02 from Ana and ~0.025 from Rui: too close to call.
+    expect(faces.matchFace(descriptor(0.0018))).toBeNull();
+  });
+});
+
+describe("IdentityStabilizer", () => {
+  beforeEach(() => vi.resetModules());
+
+  it("only switches after a name wins most of the recent frames", async () => {
+    const { IdentityStabilizer } = await load();
+    const stabilizer = new IdentityStabilizer();
+    expect(stabilizer.push("Ana")).toBeNull();
+    expect(stabilizer.push("Ana")).toBeNull();
+    expect(stabilizer.push("Ana")).toBe("Ana");
+    // A single stray frame doesn't flip the answer.
+    expect(stabilizer.push("Rui")).toBe("Ana");
+    expect(stabilizer.push(null)).toBe("Ana");
+  });
 });

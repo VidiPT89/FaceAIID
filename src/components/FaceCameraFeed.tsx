@@ -10,7 +10,7 @@ import {
   type ExpressionScores,
   type FacialExpression,
 } from "@/lib/gestures/facialExpressions";
-import { HeadMovementTracker, matrixToEuler, type HeadMovement } from "@/lib/gestures/headMovement";
+import { HeadMovementTracker, matrixToEuler, type Euler, type HeadMovement } from "@/lib/gestures/headMovement";
 import { useCameraLoop } from "@/lib/useCameraLoop";
 import { prepareMirroredFrame } from "@/lib/canvas";
 import CameraStage, { Badge, BadgeRow } from "@/components/CameraStage";
@@ -25,12 +25,22 @@ const expressionLabelKey: Record<Exclude<FacialExpression, "none">, string> = {
   surprised: "expression.surprised",
   angry: "expression.angry",
   blink: "expression.blink",
+  laugh: "expression.laugh",
+  kiss: "expression.kiss",
+  cheekPuff: "expression.cheekPuff",
+  mouthOpen: "expression.mouthOpen",
+  browsRaised: "expression.browsRaised",
+  wink: "expression.wink",
 };
 
 const headLabelKey: Record<Exclude<HeadMovement, "none">, string> = {
   nodYes: "head.nodYes",
   shakeNo: "head.shakeNo",
   tilt: "head.tilt",
+  turnLeft: "head.turnLeft",
+  turnRight: "head.turnRight",
+  lookUp: "head.lookUp",
+  lookDown: "head.lookDown",
 };
 
 interface FaceConnectionSets {
@@ -55,6 +65,7 @@ export default function FaceCameraFeed() {
   const [headMovement, setHeadMovement] = useState<HeadMovement>("none");
   const [faceDetected, setFaceDetected] = useState(false);
   const [scores, setScores] = useState<ExpressionScores | null>(null);
+  const [pose, setPose] = useState<Euler | null>(null);
 
   useEffect(() => {
     debugModeRef.current = debugMode;
@@ -113,7 +124,9 @@ export default function FaceCameraFeed() {
 
     const matrix = result.facialTransformationMatrixes?.[0]?.data;
     if (matrix) {
-      setHeadMovement(headTrackerRef.current.push(matrixToEuler(Array.from(matrix))));
+      const euler = matrixToEuler(matrix);
+      setHeadMovement(headTrackerRef.current.push(euler));
+      if (debugModeRef.current) setPose(euler);
     } else {
       headTrackerRef.current.reset();
       setHeadMovement("none");
@@ -127,6 +140,7 @@ export default function FaceCameraFeed() {
     setHeadMovement("none");
     setFaceDetected(false);
     setScores(null);
+    setPose(null);
   }, []);
 
   const camera = useCameraLoop({ prepare, onFrame, onStop });
@@ -149,9 +163,17 @@ export default function FaceCameraFeed() {
               <div>face: {faceDetected ? "yes" : "no"}</div>
               {scores && (
                 <div>
-                  smile {scores.smile.toFixed(2)} · frown {scores.frown.toFixed(2)} · browDown{" "}
-                  {scores.browDown.toFixed(2)} · browUp {scores.browInnerUp.toFixed(2)} · jaw{" "}
-                  {scores.jawOpen.toFixed(2)} · blink {scores.blink.toFixed(2)}
+                  smile {scores.smile.toFixed(2)} · frown {scores.frown.toFixed(2)} · browDown {scores.browDown.toFixed(2)} ·
+                  browUp {scores.browInnerUp.toFixed(2)}/{scores.browOuterUp.toFixed(2)} · jaw {scores.jawOpen.toFixed(2)}
+                  <br />
+                  pucker {scores.pucker.toFixed(2)} · puff {scores.cheekPuff.toFixed(2)} · eyes {scores.blink.toFixed(2)}/
+                  {scores.blinkMax.toFixed(2)}
+                </div>
+              )}
+              {pose && (
+                <div>
+                  yaw {((pose.yaw * 180) / Math.PI).toFixed(0)}° · pitch {((pose.pitch * 180) / Math.PI).toFixed(0)}° · roll{" "}
+                  {((pose.roll * 180) / Math.PI).toFixed(0)}°
                 </div>
               )}
             </>

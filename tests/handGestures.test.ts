@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classifyHandGesture, HandGestureStabilizer } from "@/lib/gestures/handGestures";
+import { readFileSync } from "node:fs";
+import {
+  classifyHandGesture,
+  correctAspect,
+  fuseWithModel,
+  HandGestureStabilizer,
+  type HandGesture,
+} from "@/lib/gestures/handGestures";
 
 interface Point {
   x: number;
@@ -94,6 +101,7 @@ describe("classifyHandGesture", () => {
   it("recognizes an open palm", () => {
     const hand = buildHand({
       ...allCurledUp,
+      thumb: { extended: true, dir: { x: -1, y: -0.3 } },
       index: { extended: true },
       middle: { extended: true },
       ring: { extended: true },
@@ -122,13 +130,50 @@ describe("classifyHandGesture", () => {
     expect(classifyHandGesture(hand)).toBe("letterI");
   });
 
-  it("recognizes a peace sign", () => {
+  it("recognizes a peace sign (fingers spread)", () => {
+    const hand = buildHand({
+      ...allCurledUp,
+      index: { extended: true, dir: { x: -0.5, y: -1 } },
+      middle: { extended: true, dir: { x: 0.5, y: -1 } },
+    });
+    expect(classifyHandGesture(hand)).toBe("peaceSign");
+  });
+
+  it("recognizes the letter U (index and middle held together)", () => {
+    const hand = buildHand({ ...allCurledUp, index: { extended: true }, middle: { extended: true } });
+    expect(classifyHandGesture(hand)).toBe("letterU");
+  });
+
+  it("recognizes crossed fingers", () => {
+    const hand = buildHand({
+      ...allCurledUp,
+      index: { extended: true, dir: { x: 0.6, y: -1 } },
+      middle: { extended: true, dir: { x: -0.6, y: -1 } },
+    });
+    expect(classifyHandGesture(hand)).toBe("fingersCrossed");
+  });
+
+  it("recognizes the letter B (four fingers up, thumb folded)", () => {
     const hand = buildHand({
       ...allCurledUp,
       index: { extended: true },
       middle: { extended: true },
+      ring: { extended: true },
+      pinky: { extended: true },
     });
-    expect(classifyHandGesture(hand)).toBe("peaceSign");
+    expect(classifyHandGesture(hand)).toBe("letterB");
+  });
+
+  it("matches nothing when fingers are half-open rather than clearly folded", () => {
+    // A relaxed hand: index up, the others bent ~130° (between "extended"
+    // and "folded"). This used to read as letters such as L or pointing.
+    const hand = buildHand({ ...allCurledUp, thumb: { extended: true, dir: { x: -1, y: 0 } }, index: { extended: true } });
+    for (const [mcpIdx, pipIdx, tipIdx] of [[9, 10, 12], [13, 14, 16], [17, 18, 20]]) {
+      const base = hand[mcpIdx];
+      hand[pipIdx] = { x: base.x, y: base.y - 0.1, z: 0 };
+      hand[tipIdx] = { x: base.x + 0.06, y: base.y - 0.17, z: 0 };
+    }
+    expect(classifyHandGesture(hand)).toBe("none");
   });
 
   it("recognizes three fingers (W)", () => {
@@ -190,11 +235,13 @@ describe("classifyHandGesture", () => {
     const hand: Point[] = new Array(21).fill(null).map(() => ({ x: 0, y: 0, z: 0 }));
     hand[0] = wrist;
     hand[2] = mcp.thumb;
-    hand[3] = { x: 0.37, y: 0.63, z: 0 };
-    hand[4] = { x: 0.4, y: 0.6, z: 0 };
+    // The index arcs up and forward, then back to meet the thumb — its tip
+    // ends well away from its own knuckle, unlike a fist's folded index.
+    hand[3] = { x: 0.36, y: 0.58, z: 0 };
+    hand[4] = { x: 0.36, y: 0.47, z: 0 };
     hand[5] = mcp.index;
-    hand[6] = { x: 0.43, y: 0.63, z: 0 };
-    hand[8] = { x: 0.4, y: 0.6, z: 0 };
+    hand[6] = { x: 0.43, y: 0.48, z: 0 };
+    hand[8] = { x: 0.37, y: 0.47, z: 0 };
     const middle = curled(mcp.middle, UP);
     hand[9] = mcp.middle;
     hand[10] = middle.pip;
@@ -217,11 +264,13 @@ describe("classifyHandGesture", () => {
     const hand: Point[] = new Array(21).fill(null).map(() => ({ x: 0, y: 0, z: 0 }));
     hand[0] = wrist;
     hand[2] = mcp.thumb;
-    hand[3] = { x: 0.37, y: 0.63, z: 0 };
-    hand[4] = { x: 0.4, y: 0.6, z: 0 };
+    // The index arcs up and forward, then back to meet the thumb — its tip
+    // ends well away from its own knuckle, unlike a fist's folded index.
+    hand[3] = { x: 0.36, y: 0.58, z: 0 };
+    hand[4] = { x: 0.36, y: 0.47, z: 0 };
     hand[5] = mcp.index;
-    hand[6] = { x: 0.43, y: 0.63, z: 0 };
-    hand[8] = { x: 0.4, y: 0.6, z: 0 };
+    hand[6] = { x: 0.43, y: 0.48, z: 0 };
+    hand[8] = { x: 0.37, y: 0.47, z: 0 };
     const middle = extended(mcp.middle, UP);
     hand[9] = mcp.middle;
     hand[10] = middle.pip;
@@ -311,5 +360,58 @@ describe("HandGestureStabilizer", () => {
     let last: ReturnType<HandGestureStabilizer["push"]> = "none";
     for (let i = 0; i < 5; i++) last = stabilizer.push("closedFist");
     expect(last).toBe("closedFist");
+  });
+});
+
+interface RealHand {
+  image: string;
+  width: number;
+  height: number;
+  model: { categoryName: string; score: number };
+  landmarks: { x: number; y: number; z: number }[];
+}
+
+/** Landmarks MediaPipe produced on its own public test photos (see the
+ *  fixture's `source`). Synthetic hands only check the rules do what they
+ *  say; these check the rules against real hands. */
+const realHands: RealHand[] = JSON.parse(
+  readFileSync(new URL("./fixtures/mediapipe-real.json", import.meta.url), "utf8"),
+).hands;
+
+const expected: Record<string, HandGesture[]> = {
+  "fist.jpg": ["closedFist"],
+  "pointing_up.jpg": ["pointing"],
+  "pointing_up_mirror.jpg": ["pointing"],
+  "pointing_up_rotated.jpg": ["pointing"],
+  "left_hands.jpg": ["openPalm"],
+  "male_full_height_hands.jpg": ["openPalm"],
+  "portrait_mirror.jpg": ["openPalm"],
+  "portrait_small.jpg": ["openPalm"],
+  // One of these two hands is relaxed and half-open: "no answer" is fine,
+  // a wrong gesture is not.
+  "hand-woman-man.jpg": ["openPalm", "none"],
+};
+
+describe("on real MediaPipe landmarks", () => {
+  it.each(realHands.map((h, i) => [`${h.image} #${i}`, h] as const))("%s", (_, hand) => {
+    const heuristic = classifyHandGesture(correctAspect(hand.landmarks, hand.width / hand.height));
+    expect(expected[hand.image]).toContain(fuseWithModel(heuristic, hand.model));
+  });
+});
+
+describe("fuseWithModel", () => {
+  it("trusts a confident model over a conflicting hand-coded letter", () => {
+    expect(fuseWithModel("letterO", { categoryName: "Closed_Fist", score: 0.9 })).toBe("closedFist");
+  });
+
+  it("keeps a hand-coded refinement of the model's class", () => {
+    expect(fuseWithModel("letterU", { categoryName: "Victory", score: 0.9 })).toBe("letterU");
+    expect(fuseWithModel("letterB", { categoryName: "Open_Palm", score: 0.8 })).toBe("letterB");
+  });
+
+  it("ignores the model when unsure or when it says None", () => {
+    expect(fuseWithModel("shaka", { categoryName: "Thumb_Up", score: 0.4 })).toBe("shaka");
+    expect(fuseWithModel("openPalm", { categoryName: "None", score: 0.95 })).toBe("openPalm");
+    expect(fuseWithModel("rockOn")).toBe("rockOn");
   });
 });

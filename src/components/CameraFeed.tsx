@@ -6,16 +6,18 @@ import { useDebugMode } from "@/lib/debugMode";
 import {
   classifyHandGesture,
   computeHandDebugInfo,
+  correctAspect,
+  fuseWithModel,
   HandGestureStabilizer,
   type HandDebugInfo,
   type HandGesture,
 } from "@/lib/gestures/handGestures";
-import { getHandLandmarker } from "@/lib/mediapipe/handLandmarker";
+import { getGestureRecognizer } from "@/lib/mediapipe/gestureRecognizer";
 import { useCameraLoop } from "@/lib/useCameraLoop";
 import { prepareMirroredFrame } from "@/lib/canvas";
 import CameraStage, { Badge, BadgeRow } from "@/components/CameraStage";
 
-type HandLandmarker = import("@mediapipe/tasks-vision").HandLandmarker;
+type GestureRecognizer = import("@mediapipe/tasks-vision").GestureRecognizer;
 type DrawingUtils = import("@mediapipe/tasks-vision").DrawingUtils;
 type Handedness = "left" | "right" | "unknown";
 
@@ -41,6 +43,9 @@ const gestureLabelKey: Record<Exclude<HandGesture, "none">, string> = {
   letterL: "gesture.letterL",
   letterO: "gesture.letterO",
   rockOn: "gesture.rockOn",
+  letterB: "gesture.letterB",
+  letterU: "gesture.letterU",
+  fingersCrossed: "gesture.fingersCrossed",
 };
 
 const handsKey = (hands: DetectedHand[]) => hands.map((h) => `${h.handedness}-${h.gesture}`).join("|");
@@ -49,7 +54,7 @@ export default function CameraFeed() {
   const { t } = useLanguage();
   const { debugMode } = useDebugMode();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const landmarkerRef = useRef<HandLandmarker | null>(null);
+  const recognizerRef = useRef<GestureRecognizer | null>(null);
   const drawingUtilsRef = useRef<DrawingUtils | null>(null);
   const connectionsRef = useRef<{ start: number; end: number }[]>([]);
   // One stabilizer per tracked hand slot (by array position — MediaPipe
@@ -60,38 +65,42 @@ export default function CameraFeed() {
 
   const [hands, setHands] = useState<DetectedHand[]>([]);
   const [handDebug, setHandDebug] = useState<HandDebugInfo | null>(null);
+  const [handModel, setHandModel] = useState<string | null>(null);
 
   useEffect(() => {
     debugModeRef.current = debugMode;
   }, [debugMode]);
 
   const prepare = useCallback(async () => {
-    landmarkerRef.current = await getHandLandmarker();
+    recognizerRef.current = await getGestureRecognizer();
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) throw new Error("canvas 2D context unavailable");
-    const { DrawingUtils, HandLandmarker } = await import("@mediapipe/tasks-vision");
+    const { DrawingUtils, GestureRecognizer } = await import("@mediapipe/tasks-vision");
     drawingUtilsRef.current = new DrawingUtils(ctx);
-    connectionsRef.current = HandLandmarker.HAND_CONNECTIONS;
+    connectionsRef.current = GestureRecognizer.HAND_CONNECTIONS;
   }, []);
 
   const onFrame = useCallback((video: HTMLVideoElement) => {
     const canvas = canvasRef.current;
-    const landmarker = landmarkerRef.current;
+    const recognizer = recognizerRef.current;
     const drawingUtils = drawingUtilsRef.current;
-    if (!canvas || !landmarker || !drawingUtils) return;
+    if (!canvas || !recognizer || !drawingUtils) return;
 
-    const result = landmarker.detectForVideo(video, performance.now());
+    const result = recognizer.recognizeForVideo(video, performance.now());
+    const aspectRatio = video.videoWidth / video.videoHeight;
     const ctx = prepareMirroredFrame(canvas, video);
 
     const detectedHands: DetectedHand[] = [];
     let firstHandDebug: HandDebugInfo | null = null;
+    let firstHandModel: string | null = null;
     try {
       result.landmarks.forEach((landmarks, i) => {
         drawingUtils.drawConnectors(landmarks, connectionsRef.current, { color: "#ffb703", lineWidth: 3 });
         drawingUtils.drawLandmarks(landmarks, { color: "#ff7a1a", fillColor: "#ff7a1a", radius: 4 });
 
         stabilizersRef.current[i] ??= new HandGestureStabilizer();
-        const gesture = stabilizersRef.current[i].push(classifyHandGesture(landmarks));
+        const heuristic = classifyHandGesture(correctAspect(landmarks, aspectRatio));
+      const gesture = stabilizersRef.current[i].push(fuseWithModel(heuristic, result.gestures[i]?.[0]));
 
         // MediaPipe's handedness assumes a mirrored (selfie) input image; the
         // frame is fed to the model un-mirrored (only the canvas is mirrored
@@ -101,7 +110,11 @@ export default function CameraFeed() {
         const handedness: Handedness = rawLabel === "Left" ? "right" : rawLabel === "Right" ? "left" : "unknown";
 
         detectedHands.push({ gesture, handedness });
-        if (i === 0) firstHandDebug = computeHandDebugInfo(landmarks);
+        if (i === 0) {
+          const model = result.gestures[i]?.[0];
+          firstHandDebug = computeHandDebugInfo(correctAspect(landmarks, aspectRatio));
+          firstHandModel = model ? `${model.categoryName} ${model.score.toFixed(2)} → ${heuristic}` : null;
+        }
       });
       stabilizersRef.current.length = detectedHands.length;
     } finally {
@@ -115,7 +128,10 @@ export default function CameraFeed() {
       handsKeyRef.current = key;
       setHands(detectedHands);
     }
-    if (debugModeRef.current) setHandDebug(firstHandDebug);
+    if (debugModeRef.current) {
+      setHandDebug(firstHandDebug);
+      setHandModel(firstHandModel);
+    }
   }, []);
 
   const onStop = useCallback(() => {
@@ -123,6 +139,7 @@ export default function CameraFeed() {
     handsKeyRef.current = "";
     setHands([]);
     setHandDebug(null);
+    setHandModel(null);
   }, []);
 
   const camera = useCameraLoop({ prepare, onFrame, onStop });
@@ -154,6 +171,7 @@ export default function CameraFeed() {
                   {handDebug.pinch.toFixed(2)}
                 </div>
               )}
+              {handModel && <div>model {handModel}</div>}
             </>
           )
         }

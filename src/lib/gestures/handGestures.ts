@@ -15,6 +15,9 @@ export type HandGesture =
   | "letterL"
   | "letterO"
   | "rockOn"
+  | "letterB"
+  | "letterU"
+  | "fingersCrossed"
   | "none";
 
 interface Point {
@@ -39,29 +42,51 @@ function angleAtVertex(a: Point, vertex: Point, b: Point): number {
 }
 
 /**
- * A finger is "extended" when its middle joint (PIP) is roughly straight —
- * the angle between (MCP→PIP) and (PIP→TIP) is close to 180°. This is
- * robust to the hand being rotated or tilted toward the camera, unlike a
- * pure tip-distance-from-wrist check, which only works when the hand is
- * held roughly upright and flat to the camera.
+ * A finger is "extended" when it's roughly straight through its middle
+ * joint — the angle MCP→PIP→TIP close to 180°. This is robust to the hand
+ * being rotated or tilted, unlike a tip-distance-from-wrist check.
  *
- * The thumb gets a looser threshold than the other four fingers: its own
- * joint (the IP joint, between the MCP and TIP landmarks used here) doesn't
- * straighten out as close to 180° as the other fingers' PIP joints do even
- * when the thumb is genuinely held straight out to the side (thumbs up, an
- * "L" shape, shaka) — a real hand's thumb has less range of motion at that
- * joint. Using the same 140° bar as the other fingers under-detects a
- * clearly-extended thumb.
+ * The thumb gets a looser bar: its joint doesn't straighten as close to
+ * 180° even when held straight out (thumbs up, "L", shaka).
  */
-function isFingerExtended(landmarks: Point[], tip: number, pip: number, mcp: number, threshold = 140): boolean {
-  const angle = angleAtVertex(landmarks[mcp], landmarks[pip], landmarks[tip]);
-  return angle > threshold;
-}
-
 const THUMB_EXTEND_ANGLE = 120;
+const FINGER_EXTEND_ANGLE = 140;
+/** Folded fingers measured 27-65° on MediaPipe's fist and pointing photos;
+ *  relaxed half-open ones 125-150°. */
+const FINGER_CURLED_ANGLE = 120;
+/** "L" needs the thumb clearly straight out, not just loosely extended.
+ *  Measured on MediaPipe's pointing_up test image: a natural pointing hand
+ *  holds the thumb at ~136-140°, which the looser 120° bar read as "L".
+ *  Open-palm thumbs measured 169-177°. */
+const THUMB_STRAIGHT_ANGLE = 150;
+/** Index/middle fingertip gap (relative to hand size) below which a V is
+ *  read as the fingers held together ("U"). */
+const FINGERS_TOGETHER_GAP = 0.25;
 
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/**
+ * MediaPipe normalizes x by the frame's width and y by its height, so on a
+ * 16:9 video a horizontal distance reads ~1.8x shorter than the same
+ * vertical one — distorting every distance ratio and bent-joint angle the
+ * classifier uses. Scaling x (and z, which shares x's scale) by the aspect
+ * ratio restores true proportions.
+ */
+export function correctAspect(landmarks: Point[], aspectRatio: number): Point[] {
+  return landmarks.map((p) => ({ x: p.x * aspectRatio, y: p.y, z: p.z * aspectRatio }));
+}
+
+/** Position of `p` along the knuckle line (index MCP → pinky MCP), so
+ *  fingertip order across the hand can be compared in any hand rotation. */
+function acrossPalm(landmarks: Point[], p: Point): number {
+  const from = landmarks[5];
+  const to = landmarks[17];
+  const ax = to.x - from.x;
+  const ay = to.y - from.y;
+  const len = Math.hypot(ax, ay) || 1;
+  return ((p.x - from.x) * ax + (p.y - from.y) * ay) / len;
 }
 
 /** Raw numbers behind the thumb/pinch-dependent gestures, exposed for a
@@ -100,102 +125,113 @@ export function computeHandDebugInfo(landmarks: Point[]): HandDebugInfo | null {
 export function classifyHandGesture(landmarks: Point[]): HandGesture {
   if (!landmarks || landmarks.length < 21) return "none";
 
-  const extended = FINGER_TIPS.map((tip, i) =>
-    isFingerExtended(landmarks, tip, FINGER_PIPS[i], FINGER_MCPS[i], i === 0 ? THUMB_EXTEND_ANGLE : 140),
-  );
-  const [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended] = extended;
+  const angles = FINGER_TIPS.map((tip, i) => angleAtVertex(landmarks[FINGER_MCPS[i]], landmarks[FINGER_PIPS[i]], landmarks[tip]));
+  const [thumbAngle] = angles;
+  const thumbExtended = thumbAngle > THUMB_EXTEND_ANGLE;
+  // Three states per finger, not two: a relaxed, half-open hand puts
+  // fingers at ~125-150° (measured on MediaPipe's hand-woman-man photo),
+  // right on the extension bar. Treating "not extended" as "curled" turned
+  // such hands into letters (L, D, I…). Shapes that need a finger folded
+  // now require it clearly folded; in-between fingers match nothing.
+  const [, indexExtended, middleExtended, ringExtended, pinkyExtended] = angles.map((a) => a > FINGER_EXTEND_ANGLE);
+  const [, indexCurled, middleCurled, ringCurled, pinkyCurled] = angles.map((a) => a < FINGER_CURLED_ANGLE);
   const nonThumbExtendedCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
+  const nonThumbCurledCount = [indexCurled, middleCurled, ringCurled, pinkyCurled].filter(Boolean).length;
+  const othersCurled = middleCurled && ringCurled && pinkyCurled;
 
-  // Hand scale (wrist to middle-finger MCP) so absolute-distance thresholds
-  // below (thumb/index pinch for "O") stay correct regardless of how close
-  // the hand is to the camera.
+  // Hand scale (wrist to middle-finger MCP) so distance thresholds below
+  // stay correct regardless of how close the hand is to the camera.
   const handScale = distance(landmarks[0], landmarks[9]) || 1;
   const thumbIndexPinch = distance(landmarks[4], landmarks[8]) / handScale;
+  const thumbMiddlePinch = distance(landmarks[4], landmarks[12]) / handScale;
 
-  // ASL/LGP fingerspelling letter "O": thumb and index tips pinched together
-  // into a circle, the other three fingers curled alongside (not fully
-  // extended, not fully closed like a fist). Checked before closedFist,
-  // which would otherwise claim this shape.
-  if (thumbIndexPinch < 0.22 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+  // ASL/LGP "O": thumb and index tips pinched into a circle, the other
+  // fingers folded. In a fist the thumb also rests near the index tip
+  // (pinch 0.19 on MediaPipe's fist photo), but that index is folded flat
+  // against the palm (tip 0.32 from its knuckle); in an "O" it arcs out in
+  // front, so the tip has to be well away from its own knuckle.
+  const indexArc = distance(landmarks[8], landmarks[5]) / handScale;
+  if (thumbIndexPinch < 0.22 && indexArc > 0.45 && indexCurled && othersCurled) {
     return "letterO";
   }
 
-  // ASL/LGP fingerspelling letter "F": thumb and index pinched exactly like
-  // "O" above, but middle/ring/pinky extended straight out instead of
-  // curled — the pinch is what separates the two, not finger-extension
-  // state alone.
+  // ASL/LGP "F" (also the 👌 "OK" sign): thumb and index pinched like "O",
+  // but middle/ring/pinky straight out.
   if (thumbIndexPinch < 0.22 && middleExtended && ringExtended && pinkyExtended) {
     return "letterF";
   }
 
-  // ASL/LGP fingerspelling letter "D": index extended straight up, thumb
-  // curled in to touch the middle fingertip (not the index tip, which is
-  // what distinguishes it from "pointing" below), ring and pinky curled.
-  const thumbMiddlePinch = distance(landmarks[4], landmarks[12]) / handScale;
-  if (thumbMiddlePinch < 0.25 && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+  // ASL/LGP "D": index up, thumb tip pressed against the middle
+  // fingertip. A plain pointing hand rests the thumb on the folded middle
+  // finger too (0.20-0.35 on MediaPipe's pointing photos), so only actual
+  // tip contact counts.
+  if (thumbMiddlePinch < 0.15 && indexExtended && othersCurled) {
     return "letterD";
   }
 
-  // ASL/LGP fingerspelling letter "L": thumb and index extended at a right
-  // angle, other three fingers closed.
-  if (thumbExtended && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+  // ASL/LGP "L": thumb clearly straight and index up, others folded.
+  if (thumbAngle > THUMB_STRAIGHT_ANGLE && indexExtended && othersCurled) {
     return "letterL";
   }
 
-  // ASL/LGP fingerspelling letter "I": only the pinky extended, everything
-  // else (including the thumb) closed. Checked before the closedFist
-  // fallback below, which would otherwise claim this shape (only 1 non-thumb
-  // finger extended).
-  if (pinkyExtended && !thumbExtended && !indexExtended && !middleExtended && !ringExtended) {
+  // ASL/LGP "I": only the pinky up, everything else (thumb too) folded.
+  if (pinkyExtended && !thumbExtended && indexCurled && middleCurled && ringCurled) {
     return "letterI";
   }
 
-  if (thumbExtended && nonThumbExtendedCount === 0) {
+  if (thumbExtended && nonThumbCurledCount === 4) {
     const thumbTip = landmarks[4];
     const thumbMcp = landmarks[2];
     if (thumbTip.y < thumbMcp.y - 0.02) return "thumbsUp";
     if (thumbTip.y > thumbMcp.y + 0.02) return "thumbsDown";
-    // ASL/LGP fingerspelling letter "A": same fist-with-extended-thumb
-    // shape as thumbs up/down, but held roughly horizontal instead of
-    // pointing up or down — without this case the shape fell through to
-    // "none", matching neither the y-thresholds above nor closedFist below
-    // (which requires the thumb not extended).
+    // ASL/LGP "A": the same fist-with-thumb-out shape held sideways.
     return "letterA";
   }
 
-  // Shaka / ASL-LGP "Y": thumb and pinky extended, the three middle fingers
-  // closed.
-  if (thumbExtended && pinkyExtended && !indexExtended && !middleExtended && !ringExtended) {
+  // Shaka / ASL-LGP "Y": thumb and pinky out, the middle three folded.
+  if (thumbExtended && pinkyExtended && indexCurled && middleCurled && ringCurled) {
     return "shaka";
   }
 
-  // ASL "I love you": thumb, index and pinky extended, middle and ring closed.
-  if (thumbExtended && indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
+  // ASL "I love you": thumb, index and pinky out, middle and ring folded.
+  if (thumbExtended && indexExtended && pinkyExtended && middleCurled && ringCurled) {
     return "iLoveYou";
   }
 
-  // "Rock on" / horns: index and pinky extended, thumb tucked in (unlike
-  // shaka above, which needs the thumb extended too) — checked after
-  // iLoveYou/shaka since both also involve the pinky, to avoid claiming
-  // their shapes when the thumb happens to read as borderline-extended.
-  if (!thumbExtended && indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
+  // "Rock on" / horns: index and pinky out with the thumb tucked (unlike
+  // shaka and "I love you" above, which need the thumb out).
+  if (!thumbExtended && indexExtended && pinkyExtended && middleCurled && ringCurled) {
     return "rockOn";
   }
 
-  // Peace sign / V / number 2: index and middle only.
-  if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
+  // Index and middle only: crossed (🤞, ASL "R"), held together (ASL "U")
+  // or spread (peace sign / V / number 2). Compared along the knuckle line
+  // so it works whichever way the hand is turned.
+  if (indexExtended && middleExtended && ringCurled && pinkyCurled) {
+    const indexTip = acrossPalm(landmarks, landmarks[8]);
+    const middleTip = acrossPalm(landmarks, landmarks[12]);
+    const middleKnuckle = acrossPalm(landmarks, landmarks[9]);
+    // At the knuckles the middle finger sits on the pinky side of the
+    // index; when the tips swap sides, the fingers are crossed.
+    if (Math.sign(middleTip - indexTip) !== Math.sign(middleKnuckle) && Math.abs(middleTip - indexTip) / handScale > 0.05) {
+      return "fingersCrossed";
+    }
+    if (Math.abs(middleTip - indexTip) / handScale < FINGERS_TOGETHER_GAP) return "letterU";
     return "peaceSign";
   }
 
-  // W / number 3: index, middle and ring, no pinky. Checked before the
-  // tolerant "openPalm" fallback below, which would otherwise swallow it
-  // (3 non-thumb fingers extended).
-  if (indexExtended && middleExtended && ringExtended && !pinkyExtended) {
+  // W / number 3: index, middle and ring, pinky folded.
+  if (indexExtended && middleExtended && ringExtended && pinkyCurled) {
     return "threeFingers";
   }
 
-  if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+  if (indexExtended && othersCurled) {
     return "pointing";
+  }
+
+  // ASL "B" / number 4: all four fingers up, thumb folded across the palm.
+  if (nonThumbExtendedCount === 4 && !thumbExtended) {
+    return "letterB";
   }
 
   // Tolerate one misdetected finger (commonly the pinky, which is easiest
@@ -205,11 +241,67 @@ export function classifyHandGesture(landmarks: Point[]): HandGesture {
     return "openPalm";
   }
 
-  if (nonThumbExtendedCount <= 1 && !thumbExtended) {
+  // A fist: at least three fingers clearly folded and the thumb in.
+  if (nonThumbCurledCount >= 3 && nonThumbExtendedCount === 0 && !thumbExtended) {
     return "closedFist";
   }
 
   return "none";
+}
+
+/** Classes of MediaPipe's trained GestureRecognizer model. */
+export type ModelGestureName =
+  | "None"
+  | "Closed_Fist"
+  | "Open_Palm"
+  | "Pointing_Up"
+  | "Thumb_Down"
+  | "Thumb_Up"
+  | "Victory"
+  | "ILoveYou";
+
+const MODEL_GESTURE: Record<Exclude<ModelGestureName, "None">, HandGesture> = {
+  Closed_Fist: "closedFist",
+  Open_Palm: "openPalm",
+  Pointing_Up: "pointing",
+  Thumb_Down: "thumbsDown",
+  Thumb_Up: "thumbsUp",
+  Victory: "peaceSign",
+  ILoveYou: "iLoveYou",
+};
+
+/** Hand-coded shapes that are a finer reading of a model class (the model
+ *  was never trained on them, so it reports the broader class instead). */
+const REFINEMENTS: Partial<Record<HandGesture, HandGesture[]>> = {
+  peaceSign: ["letterU", "fingersCrossed"],
+  openPalm: ["letterB"],
+  closedFist: ["letterA"],
+  thumbsUp: ["letterA"],
+  pointing: ["letterL"],
+};
+
+export const MODEL_MIN_SCORE = 0.55;
+
+/**
+ * Combines the trained model's answer with the hand-coded classifier.
+ *
+ * Measured on MediaPipe's own test photos, the hand-coded rules alone
+ * misread a fist as "O" and a pointing finger as "D"/"L" (the letter checks
+ * run first and claim those shapes), while the model got all three right
+ * with 0.72-0.90 confidence. So a confident model answer wins, unless the
+ * hand-coded result is a finer version of the same shape (V → U, fist → A).
+ * The model only knows 7 gestures and often says "None" even for a clear
+ * open palm, so anything else falls back to the hand-coded result.
+ */
+export function fuseWithModel(
+  heuristic: HandGesture,
+  model?: { categoryName: string; score: number },
+): HandGesture {
+  if (!model || model.score < MODEL_MIN_SCORE || model.categoryName === "None") return heuristic;
+  const fromModel = MODEL_GESTURE[model.categoryName as Exclude<ModelGestureName, "None">];
+  if (!fromModel) return heuristic;
+  if (heuristic === fromModel || REFINEMENTS[fromModel]?.includes(heuristic)) return heuristic;
+  return fromModel;
 }
 
 /**

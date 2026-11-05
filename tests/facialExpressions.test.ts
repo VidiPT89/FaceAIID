@@ -9,6 +9,10 @@ const neutral: ExpressionScores = {
   jawOpen: 0.02,
   eyeWide: 0.05,
   blink: 0.05,
+  blinkMax: 0.05,
+  browOuterUp: 0.05,
+  pucker: 0.05,
+  cheekPuff: 0.02,
 };
 
 /** Feeds `count` frames of `scores` through the tracker and returns the last
@@ -85,7 +89,7 @@ describe("ExpressionBaselineTracker", () => {
   it("detects a blink from the raw score without needing a baseline", () => {
     const tracker = new ExpressionBaselineTracker();
     feed(tracker, neutral, 10);
-    const blinking: ExpressionScores = { ...neutral, blink: 0.9 };
+    const blinking: ExpressionScores = { ...neutral, blink: 0.9, blinkMax: 0.9 };
     expect(feed(tracker, blinking, 5)).toBe("blink");
   });
 
@@ -96,7 +100,7 @@ describe("ExpressionBaselineTracker", () => {
     // repeated frames to display.
     const tracker = new ExpressionBaselineTracker();
     feed(tracker, neutral, 10);
-    const blinking: ExpressionScores = { ...neutral, blink: 0.9 };
+    const blinking: ExpressionScores = { ...neutral, blink: 0.9, blinkMax: 0.9 };
     expect(tracker.classify(blinking)).toBe("blink");
   });
 
@@ -161,5 +165,36 @@ describe("ExpressionBaselineTracker", () => {
     const tracker = new ExpressionBaselineTracker();
     const differentRestingFace: ExpressionScores = { ...neutral, smile: 0.35 };
     expect(feed(tracker, differentRestingFace, 200)).toBe("none");
+  });
+
+  describe("new expressions", () => {
+    const settle = () => {
+      const tracker = new ExpressionBaselineTracker();
+      feed(tracker, neutral, 10);
+      return tracker;
+    };
+    const held = (scores: Partial<ExpressionScores>) => feed(settle(), { ...neutral, ...scores }, 12);
+
+    it("reports a big smile as a smile even though it pulls the brows down", () => {
+      // MediaPipe's smiling test portraits: smile ~0.95 with browDown ~0.85.
+      expect(held({ smile: 0.95, browDown: 0.85 })).toBe("smile");
+    });
+
+    it("tells a laugh (smile with the mouth open) from a smile", () => {
+      expect(held({ smile: 0.9, jawOpen: 0.5 })).toBe("laugh");
+    });
+
+    it("detects a kiss, puffed cheeks, an open mouth and raised eyebrows", () => {
+      expect(held({ pucker: 0.8 })).toBe("kiss");
+      expect(held({ cheekPuff: 0.7 })).toBe("cheekPuff");
+      expect(held({ jawOpen: 0.6 })).toBe("mouthOpen");
+      expect(held({ browInnerUp: 0.5, browOuterUp: 0.5 })).toBe("browsRaised");
+    });
+
+    it("tells a wink (one eye) from a blink (both eyes), on a single frame", () => {
+      const tracker = settle();
+      expect(tracker.classify({ ...neutral, blink: 0.05, blinkMax: 0.9 })).toBe("wink");
+      expect(tracker.classify({ ...neutral, blink: 0.9, blinkMax: 0.95 })).toBe("blink");
+    });
   });
 });

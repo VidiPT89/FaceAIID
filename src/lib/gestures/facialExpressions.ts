@@ -1,4 +1,16 @@
-export type FacialExpression = "smile" | "sad" | "surprised" | "angry" | "blink" | "none";
+export type FacialExpression =
+  | "smile"
+  | "laugh"
+  | "sad"
+  | "surprised"
+  | "angry"
+  | "kiss"
+  | "cheekPuff"
+  | "mouthOpen"
+  | "browsRaised"
+  | "wink"
+  | "blink"
+  | "none";
 
 interface Blendshape {
   categoryName: string;
@@ -12,7 +24,13 @@ export interface ExpressionScores {
   browInnerUp: number;
   jawOpen: number;
   eyeWide: number;
+  /** Both eyes closed: the less-closed eye's score. */
   blink: number;
+  /** One eye closed: the more-closed eye's score (with `blink` for the other). */
+  blinkMax: number;
+  browOuterUp: number;
+  pucker: number;
+  cheekPuff: number;
 }
 
 function score(blendshapes: Blendshape[], name: string): number {
@@ -39,6 +57,10 @@ export function computeExpressionScores(blendshapes: Blendshape[]): ExpressionSc
     jawOpen: score(blendshapes, "jawOpen"),
     eyeWide: Math.max(eyeWideL, eyeWideR),
     blink: Math.min(eyeBlinkL, eyeBlinkR),
+    blinkMax: Math.max(eyeBlinkL, eyeBlinkR),
+    browOuterUp: (score(blendshapes, "browOuterUpLeft") + score(blendshapes, "browOuterUpRight")) / 2,
+    pucker: score(blendshapes, "mouthPucker"),
+    cheekPuff: score(blendshapes, "cheekPuff"),
   };
 }
 
@@ -117,38 +139,56 @@ export class ExpressionBaselineTracker {
       return "none";
     }
 
+    const smooth = (key: keyof ExpressionScores) =>
+      previousSmoothed[key] + (scores[key] - previousSmoothed[key]) * this.smoothRate;
     const s: ExpressionScores = {
-      smile: previousSmoothed.smile + (scores.smile - previousSmoothed.smile) * this.smoothRate,
-      frown: previousSmoothed.frown + (scores.frown - previousSmoothed.frown) * this.smoothRate,
-      browDown: previousSmoothed.browDown + (scores.browDown - previousSmoothed.browDown) * this.smoothRate,
-      browInnerUp: previousSmoothed.browInnerUp + (scores.browInnerUp - previousSmoothed.browInnerUp) * this.smoothRate,
-      jawOpen: previousSmoothed.jawOpen + (scores.jawOpen - previousSmoothed.jawOpen) * this.smoothRate,
-      eyeWide: previousSmoothed.eyeWide + (scores.eyeWide - previousSmoothed.eyeWide) * this.smoothRate,
+      smile: smooth("smile"),
+      frown: smooth("frown"),
+      browDown: smooth("browDown"),
+      browInnerUp: smooth("browInnerUp"),
+      browOuterUp: smooth("browOuterUp"),
+      jawOpen: smooth("jawOpen"),
+      eyeWide: smooth("eyeWide"),
+      pucker: smooth("pucker"),
+      cheekPuff: smooth("cheekPuff"),
+      // Blinks are too brief to smooth; they're read raw (see below).
       blink: scores.blink,
+      blinkMax: scores.blinkMax,
     };
     this.smoothed = s;
 
-    const smileDelta = s.smile - base.smile;
-    const frownDelta = s.frown - base.frown;
-    const browDownDelta = s.browDown - base.browDown;
-    const browInnerUpDelta = s.browInnerUp - base.browInnerUp;
-    const jawOpenDelta = s.jawOpen - base.jawOpen;
-    const eyeWideDelta = s.eyeWide - base.eyeWide;
+    const delta = (key: keyof ExpressionScores) => s[key] - base[key];
+    const smileDelta = delta("smile");
+    const jawOpenDelta = delta("jawOpen");
+    const browUpDelta = (delta("browInnerUp") + delta("browOuterUp")) / 2;
 
-    const surprised = browInnerUpDelta > 0.12 && jawOpenDelta > 0.08 && eyeWideDelta > 0.06;
-    const angry = browDownDelta > 0.12 && jawOpenDelta < 0.08 && !surprised;
-    const sad = frownDelta > 0.08 && !surprised;
-    const smile = smileDelta > 0.1 && jawOpenDelta < 0.3;
-    // Blink is inherently transient (eyes are open almost all the time),
-    // so an absolute threshold on the raw score works fine here — no
+    const surprised = delta("browInnerUp") > 0.12 && jawOpenDelta > 0.08 && delta("eyeWide") > 0.06;
+    const smiling = smileDelta > 0.1;
+    // A real smile squints the eyes and pulls the brows down: MediaPipe's
+    // smiling test portraits score browDown 0.81-0.89. Checking "angry"
+    // before (or without excluding) a smile reported big smiles as angry.
+    const angry = delta("browDown") > 0.12 && jawOpenDelta < 0.08 && !surprised && !smiling;
+    const sad = delta("frown") > 0.08 && !surprised && !smiling;
+    const kiss = delta("pucker") > 0.35 && !smiling;
+    const cheekPuff = delta("cheekPuff") > 0.3;
+    const mouthOpen = jawOpenDelta > 0.3 && !smiling && !surprised;
+    const browsRaised = browUpDelta > 0.2 && jawOpenDelta < 0.15 && !surprised;
+    // Blinks and winks are inherently transient (eyes are open almost all
+    // the time), so an absolute threshold on the raw score works — no
     // baseline or smoothing needed.
     const blink = s.blink > 0.4;
+    const wink = s.blinkMax > 0.55 && s.blink < 0.25;
 
     let expression: FacialExpression = "none";
     if (surprised) expression = "surprised";
+    else if (smiling) expression = jawOpenDelta > 0.25 ? "laugh" : "smile";
+    else if (kiss) expression = "kiss";
+    else if (cheekPuff) expression = "cheekPuff";
     else if (angry) expression = "angry";
     else if (sad) expression = "sad";
-    else if (smile) expression = "smile";
+    else if (mouthOpen) expression = "mouthOpen";
+    else if (browsRaised) expression = "browsRaised";
+    else if (wink) expression = "wink";
     else if (blink) expression = "blink";
 
     this.recentWindow.push(expression);
@@ -180,7 +220,7 @@ export class ExpressionBaselineTracker {
     // deliberately/slowly someone blinked. It bypasses the vote and displays
     // immediately off the smoothed per-frame signal instead, same as any
     // other instantaneous (rather than held) cue.
-    const displayed = expression === "blink" ? "blink" : winner ?? "none";
+    const displayed = expression === "blink" || expression === "wink" ? expression : (winner ?? "none");
 
     // Freeze the baseline on the *displayed* (post-vote) result, not the
     // raw instant one: an earlier version froze on the raw per-frame value,
@@ -192,15 +232,11 @@ export class ExpressionBaselineTracker {
     // non-none, so a permanent trait doesn't get stuck reporting a false
     // expression forever — see slowAdaptRate.
     const rate = displayed === "none" ? this.adaptRate : this.slowAdaptRate;
-    this.baseline = {
-      smile: base.smile + smileDelta * rate,
-      frown: base.frown + frownDelta * rate,
-      browDown: base.browDown + browDownDelta * rate,
-      browInnerUp: base.browInnerUp + browInnerUpDelta * rate,
-      jawOpen: base.jawOpen + jawOpenDelta * rate,
-      eyeWide: base.eyeWide + eyeWideDelta * rate,
-      blink: base.blink,
-    };
+    const next = { ...base };
+    for (const key of Object.keys(base) as (keyof ExpressionScores)[]) {
+      if (key !== "blink" && key !== "blinkMax") next[key] = base[key] + (s[key] - base[key]) * rate;
+    }
+    this.baseline = next;
 
     return displayed;
   }
