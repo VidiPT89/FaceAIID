@@ -109,7 +109,9 @@ export class ExpressionBaselineTracker {
 
   classify(scores: ExpressionScores): FacialExpression {
     const previousSmoothed = this.smoothed;
-    if (!previousSmoothed) {
+    const base = this.baseline;
+    if (!previousSmoothed || !base) {
+      // First frame after (re)starting: nothing to compare against yet.
       this.smoothed = scores;
       this.baseline = scores;
       return "none";
@@ -125,12 +127,6 @@ export class ExpressionBaselineTracker {
       blink: scores.blink,
     };
     this.smoothed = s;
-
-    const base = this.baseline;
-    if (!base) {
-      this.baseline = s;
-      return "none";
-    }
 
     const smileDelta = s.smile - base.smile;
     const frownDelta = s.frown - base.frown;

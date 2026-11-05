@@ -57,7 +57,7 @@ the permission prompt, and:
 - **Face**: smile, frown, look surprised, nod or shake your head — the detected expression and head
   movement show up as badges, with the face contour drawn live.
 - **Identification**: type a name and press **Register face** to store your face descriptor locally, then
-  the app recognizes you (or shows "not recognized") on every subsequent frame. Everything stays in this
+  the app recognizes you (or shows "not recognized") on every subsequent frame. The name stays filled, so pressing again saves extra samples (up to 5) from other angles or lighting for more reliable matching. Everything stays in this
   browser's `localStorage` — nothing is ever uploaded.
 
 Switch language and appearance at any time from the header.
@@ -70,7 +70,9 @@ npm run lint
 npm run test
 ```
 
-Unit tests ([Vitest](https://vitest.dev)) cover the pure gesture and expression classifiers in `src/lib/gestures/` — no camera or browser needed, since those are the parts most sensitive to threshold/geometry regressions.
+Unit tests ([Vitest](https://vitest.dev)) cover the pure gesture and expression classifiers in `src/lib/gestures/`, the local face store (sample cap, matching, corrupted or unwritable storage) and that the MediaPipe WASM loaded from the CDN matches the installed `@mediapipe/tasks-vision` version — no camera or browser needed.
+
+`@mediapipe/tasks-vision` is pinned to an exact version on purpose: when upgrading it, update `MEDIAPIPE_WASM_VERSION` in `src/lib/mediapipe/vision.ts` too (the test above fails until both match).
 
 ## 📄 License
 

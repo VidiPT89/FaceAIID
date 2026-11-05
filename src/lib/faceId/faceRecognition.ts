@@ -1,5 +1,7 @@
 "use client";
 
+import { readStorage, writeStorage } from "@/lib/storage";
+
 const STORAGE_KEY = "faceaiid-known-faces";
 const MATCH_THRESHOLD = 0.5; // lower = stricter; face-api's own default is 0.6
 /** Capped so repeatedly re-registering the same person doesn't grow
@@ -46,17 +48,36 @@ export async function describeFace(input: HTMLVideoElement) {
   return result ?? null;
 }
 
-export function getKnownFaces(): KnownFace[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as KnownFace[]) : [];
-  } catch {
-    return [];
-  }
+/** In-memory copy of what's in localStorage. Matching runs on every
+ *  recognized frame; re-reading and re-parsing the stored JSON each time was
+ *  pure overhead, since only this module ever writes it. */
+let cache: KnownFace[] | null = null;
+
+function isKnownFace(value: unknown): value is KnownFace {
+  const face = value as KnownFace;
+  return typeof face?.name === "string" && Array.isArray(face.descriptor);
 }
 
-export function saveKnownFace(name: string, descriptor: Float32Array) {
+export function getKnownFaces(): KnownFace[] {
+  if (typeof window === "undefined") return [];
+  if (cache) return cache;
+  try {
+    const parsed: unknown = JSON.parse(readStorage(STORAGE_KEY) ?? "[]");
+    cache = Array.isArray(parsed) ? parsed.filter(isKnownFace) : [];
+  } catch {
+    cache = [];
+  }
+  return cache;
+}
+
+/** Returns false when the browser refused to persist the change. */
+function persist(faces: KnownFace[]): boolean {
+  if (!writeStorage(STORAGE_KEY, JSON.stringify(faces))) return false;
+  cache = faces;
+  return true;
+}
+
+export function saveKnownFace(name: string, descriptor: Float32Array): boolean {
   const all = getKnownFaces();
   const samplesForName = all.filter((f) => f.name === name);
   samplesForName.push({ name, descriptor: Array.from(descriptor) });
@@ -64,7 +85,7 @@ export function saveKnownFace(name: string, descriptor: Float32Array) {
     samplesForName.splice(0, samplesForName.length - MAX_SAMPLES_PER_PERSON);
   }
   const others = all.filter((f) => f.name !== name);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...others, ...samplesForName]));
+  return persist([...others, ...samplesForName]);
 }
 
 export function sampleCountFor(name: string): number {
@@ -74,20 +95,11 @@ export function sampleCountFor(name: string): number {
 /** One row per distinct registered person, for UI lists — collapses the
  *  (possibly several) samples behind each name into one entry. */
 export function getKnownFaceNames(): string[] {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const face of getKnownFaces()) {
-    if (!seen.has(face.name)) {
-      seen.add(face.name);
-      names.push(face.name);
-    }
-  }
-  return names;
+  return [...new Set(getKnownFaces().map((face) => face.name))];
 }
 
 export function deleteKnownFace(name: string) {
-  const faces = getKnownFaces().filter((f) => f.name !== name);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(faces));
+  persist(getKnownFaces().filter((f) => f.name !== name));
 }
 
 function euclideanDistance(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -100,17 +112,13 @@ function euclideanDistance(a: ArrayLike<number>, b: ArrayLike<number>): number {
 }
 
 export function matchFace(descriptor: Float32Array): { name: string; distance: number } | null {
-  const known = getKnownFaces();
-  if (known.length === 0) return null;
-
   let best: { name: string; distance: number } | null = null;
-  for (const face of known) {
+  for (const face of getKnownFaces()) {
     const distance = euclideanDistance(descriptor, face.descriptor);
     if (!best || distance < best.distance) {
       best = { name: face.name, distance };
     }
   }
 
-  if (best && best.distance <= MATCH_THRESHOLD) return best;
-  return null;
+  return best && best.distance <= MATCH_THRESHOLD ? best : null;
 }

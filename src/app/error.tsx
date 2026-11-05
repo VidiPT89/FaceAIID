@@ -12,7 +12,7 @@ import { useEffect } from "react";
  * happened inside one of those providers, relying on them here to render
  * the fallback would just throw again.
  */
-export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function RouteError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error("[FaceAIID] unhandled render error", error);
   }, [error]);

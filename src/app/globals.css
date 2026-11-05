@@ -81,12 +81,3 @@ body {
   background-clip: text;
   color: transparent;
 }
-
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2.4s ease-in-out infinite;
-}

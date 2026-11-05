@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import {
   loadFaceModels,
@@ -13,19 +12,12 @@ import {
   deleteKnownFace,
   MAX_SAMPLES_PER_PERSON,
 } from "@/lib/faceId/faceRecognition";
-
-type Status = "idle" | "loading" | "running" | "denied" | "error";
+import { useCameraLoop } from "@/lib/useCameraLoop";
+import CameraStage, { Badge, BadgeRow } from "@/components/CameraStage";
 
 export default function FaceIdCameraFeed() {
   const { t } = useLanguage();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const loopRef = useRef<() => void>(() => {});
-  const busyRef = useRef(false);
-
-  const [status, setStatus] = useState<Status>("idle");
-  const [match, setMatch] = useState<{ name: string; distance: number } | null>(null);
+  const [matchName, setMatchName] = useState<string | null>(null);
   const [knownFaces, setKnownFaces] = useState<string[]>([]);
   const [nameInput, setNameInput] = useState("");
   const [registering, setRegistering] = useState(false);
@@ -39,70 +31,18 @@ export default function FaceIdCameraFeed() {
     setKnownFaces(getKnownFaceNames());
   }, []);
 
-  const stop = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setStatus("idle");
-    setMatch(null);
+  const onFrame = useCallback(async (video: HTMLVideoElement) => {
+    const result = await describeFace(video);
+    setMatchName(result ? (matchFace(result.descriptor)?.name ?? null) : null);
   }, []);
 
-  useEffect(() => stop, [stop]);
-
-  const recognizeLoop = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || video.readyState < 2 || busyRef.current) {
-      rafRef.current = requestAnimationFrame(() => loopRef.current());
-      return;
-    }
-
-    busyRef.current = true;
-    describeFace(video)
-      .then((result) => {
-        if (result) {
-          setMatch(matchFace(result.descriptor));
-        } else {
-          setMatch(null);
-        }
-      })
-      .catch((err) => {
-        console.error("[FaceAIID] face identification frame failed", err);
-      })
-      .finally(() => {
-        busyRef.current = false;
-        rafRef.current = requestAnimationFrame(() => loopRef.current());
-      });
+  const onStop = useCallback(() => {
+    setMatchName(null);
+    setFeedback(null);
   }, []);
 
-  useEffect(() => {
-    loopRef.current = recognizeLoop;
-  }, [recognizeLoop]);
-
-  const start = useCallback(async () => {
-    setStatus("loading");
-    try {
-      await loadFaceModels();
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
-      });
-      streamRef.current = stream;
-
-      const video = videoRef.current;
-      if (!video) return;
-      video.srcObject = stream;
-      await video.play();
-
-      setStatus("running");
-      rafRef.current = requestAnimationFrame(() => loopRef.current());
-    } catch (err) {
-      console.error(err);
-      const domErr = err as DOMException;
-      setStatus(domErr?.name === "NotAllowedError" ? "denied" : "error");
-    }
-  }, []);
+  const camera = useCameraLoop({ prepare: loadFaceModels, onFrame, onStop });
+  const { videoRef } = camera;
 
   const handleRegister = useCallback(async () => {
     const video = videoRef.current;
@@ -117,96 +57,72 @@ export default function FaceIdCameraFeed() {
         setFeedback(t("faceId.noFaceDetected"));
         return;
       }
-      saveKnownFace(name, result.descriptor);
+      if (!saveKnownFace(name, result.descriptor)) {
+        setFeedback(t("faceId.saveFailed"));
+        return;
+      }
       setKnownFaces(getKnownFaceNames());
-      setNameInput("");
+      // The name stays filled so several samples (different angles and
+      // lighting) can be saved in a row, which makes matching more robust.
       setFeedback(`${t("faceId.sampleSaved")} (${sampleCountFor(name)}/${MAX_SAMPLES_PER_PERSON})`);
+    } catch (err) {
+      console.error("[FaceAIID] face registration failed", err);
+      setFeedback(t("faceId.saveFailed"));
     } finally {
       setRegistering(false);
     }
-  }, [nameInput, t]);
+  }, [nameInput, t, videoRef]);
 
   const handleDelete = useCallback((name: string) => {
     deleteKnownFace(name);
     setKnownFaces(getKnownFaceNames());
   }, []);
 
+  const running = camera.status === "running";
+
   return (
     <div className="flex flex-col items-center gap-6 w-full">
-      <div className="relative w-full max-w-2xl aspect-video rounded-2xl overflow-hidden border border-border bg-surface shadow-2xl shadow-black/10">
-        <video
-          ref={videoRef}
-          className="w-full h-full object-cover -scale-x-100"
-          playsInline
-          muted
-        />
-        <AnimatePresence>
-          {status !== "running" && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-surface-muted/95 text-center px-6"
-            >
-              {status === "loading" && (
-                <>
-                  <div className="h-10 w-10 rounded-full border-4 border-accent border-t-transparent animate-spin" />
-                  <p className="text-foreground-muted">{t("camera.loading")}</p>
-                </>
-              )}
-              {status === "denied" && <p className="text-accent-3">{t("camera.permission")}</p>}
-              {status === "error" && <p className="text-accent-3">{t("camera.error")}</p>}
-              {status === "idle" && <p className="text-foreground-muted">{t("hero.subtitleFaceId")}</p>}
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <CameraStage
+        camera={camera}
+        idleText={t("hero.subtitleFaceId")}
+        badges={
+          <BadgeRow show animationKey={matchName ?? "unknown"}>
+            {matchName ? <Badge>{matchName}</Badge> : <Badge muted>{t("faceId.unknown")}</Badge>}
+          </BadgeRow>
+        }
+      />
 
-        <AnimatePresence>
-          {status === "running" && (
-            <motion.div
-              key={match ? match.name : "unknown"}
-              initial={{ opacity: 0, y: 10, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className={`absolute bottom-4 left-1/2 -translate-x-1/2 font-semibold px-5 py-2 rounded-full shadow-lg text-sm ${
-                match ? "gradient-brand text-black" : "bg-black/70 text-white"
-              }`}
-            >
-              {match ? `${match.name}` : t("faceId.unknown")}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <motion.button
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
-        onClick={status === "running" ? stop : start}
-        className="gradient-brand text-black font-semibold px-8 py-3 rounded-full shadow-lg shadow-orange-900/20 transition-shadow hover:shadow-xl"
-      >
-        {status === "running" ? t("camera.stop") : t("camera.start")}
-      </motion.button>
-
-      {status === "running" && (
-        <div className="flex flex-col items-center gap-3 w-full max-w-md">
+      {running && (
+        <form
+          className="flex flex-col items-center gap-3 w-full max-w-md"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleRegister();
+          }}
+        >
           <div className="flex w-full gap-2">
             <input
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               placeholder={t("faceId.namePlaceholder")}
-              className="flex-1 rounded-full border border-border bg-surface px-4 py-2 text-sm outline-none focus:border-accent"
+              aria-label={t("faceId.namePlaceholder")}
+              maxLength={40}
+              className="flex-1 min-w-0 rounded-full border border-border bg-surface px-4 py-2 text-sm outline-none focus:border-accent"
             />
             <button
-              onClick={handleRegister}
+              type="submit"
               disabled={!nameInput.trim() || registering}
               className="gradient-brand text-black text-sm font-semibold px-4 py-2 rounded-full disabled:opacity-40"
             >
               {t("faceId.register")}
             </button>
           </div>
-          {feedback && <p className="text-xs text-foreground-muted">{feedback}</p>}
-        </div>
+          {feedback && (
+            <p className="text-xs text-foreground-muted" role="status">
+              {feedback}
+            </p>
+          )}
+        </form>
       )}
 
       {knownFaces.length > 0 && (

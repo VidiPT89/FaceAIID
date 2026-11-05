@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { readStorage, writeStorage } from "@/lib/storage";
 
 export type Language = "pt" | "en";
 
@@ -16,10 +17,10 @@ const dictionaries: Record<Language, Dictionary> = {
       "Aponta a câmara e mostra a mão. Tudo é processado localmente no teu browser — nada é enviado para nenhum servidor.",
     "camera.start": "Iniciar câmara",
     "camera.stop": "Parar câmara",
+    "camera.cancel": "Cancelar",
     "camera.permission": "É necessário dar permissão de acesso à câmara.",
     "camera.loading": "A carregar o modelo de deteção…",
     "camera.error": "Não foi possível aceder à câmara.",
-    "gesture.none": "Nenhum gesto detetado",
     "gesture.thumbsUp": "Fixe 👍",
     "gesture.openPalm": "Mão aberta ✋",
     "gesture.closedFist": "Punho fechado ✊",
@@ -55,13 +56,11 @@ const dictionaries: Record<Language, Dictionary> = {
     "hero.titleFaceId": "Identificação facial",
     "hero.subtitleFaceId":
       "Regista a tua cara e a app reconhece-te depois. Tudo guardado só neste dispositivo (localStorage) — nunca sai daqui.",
-    "expression.none": "Nenhuma expressão detetada",
     "expression.smile": "A sorrir 😊",
     "expression.sad": "Triste 😢",
     "expression.surprised": "Surpreso(a) 😲",
     "expression.angry": "Zangado(a) 😠",
     "expression.blink": "A piscar 😉",
-    "head.none": "Sem movimento detetado",
     "head.nodYes": "A acenar que sim 👍",
     "head.shakeNo": "A acenar que não 👎",
     "head.tilt": "Cabeça inclinada",
@@ -70,6 +69,7 @@ const dictionaries: Record<Language, Dictionary> = {
     "faceId.sampleSaved": "Amostra guardada",
     "faceId.noFaceDetected": "Não foi detetado nenhum rosto. Aproxima-te da câmara.",
     "faceId.unknown": "Rosto não reconhecido",
+    "faceId.saveFailed": "Não foi possível guardar o rosto. Tenta novamente.",
     "faceId.remove": "Remover",
     "faceId.privacyNote":
       "Os rostos registados ficam guardados apenas no localStorage deste browser — nunca são enviados para nenhum servidor.",
@@ -83,10 +83,10 @@ const dictionaries: Record<Language, Dictionary> = {
       "Point the camera and show your hand. Everything runs locally in your browser — nothing is sent to any server.",
     "camera.start": "Start camera",
     "camera.stop": "Stop camera",
+    "camera.cancel": "Cancel",
     "camera.permission": "Camera access permission is required.",
     "camera.loading": "Loading detection model…",
     "camera.error": "Could not access the camera.",
-    "gesture.none": "No gesture detected",
     "gesture.thumbsUp": "Thumbs up 👍",
     "gesture.openPalm": "Open palm ✋",
     "gesture.closedFist": "Closed fist ✊",
@@ -121,13 +121,11 @@ const dictionaries: Record<Language, Dictionary> = {
     "hero.titleFaceId": "Face identification",
     "hero.subtitleFaceId":
       "Register your face and the app will recognize you afterwards. Stored only on this device (localStorage) — it never leaves it.",
-    "expression.none": "No expression detected",
     "expression.smile": "Smiling 😊",
     "expression.sad": "Sad 😢",
     "expression.surprised": "Surprised 😲",
     "expression.angry": "Angry 😠",
     "expression.blink": "Blinking 😉",
-    "head.none": "No movement detected",
     "head.nodYes": "Nodding yes 👍",
     "head.shakeNo": "Shaking no 👎",
     "head.tilt": "Head tilted",
@@ -136,6 +134,7 @@ const dictionaries: Record<Language, Dictionary> = {
     "faceId.sampleSaved": "Sample saved",
     "faceId.noFaceDetected": "No face detected. Move closer to the camera.",
     "faceId.unknown": "Face not recognized",
+    "faceId.saveFailed": "Could not save the face. Please try again.",
     "faceId.remove": "Remove",
     "faceId.privacyNote":
       "Registered faces are stored only in this browser's localStorage — never sent to any server.",
@@ -159,7 +158,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     // Deliberately deferred to an effect: localStorage/navigator.language are
     // only available client-side, so the first render must match the server
     // ("pt") before this runs, avoiding a hydration mismatch.
-    const stored = window.localStorage.getItem(STORAGE_KEY) as Language | null;
+    const stored = readStorage(STORAGE_KEY);
     if (stored === "pt" || stored === "en") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLanguageState(stored);
@@ -171,8 +170,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const setLanguage = (next: Language) => {
     setLanguageState(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
+    writeStorage(STORAGE_KEY, next);
   };
+
+  useEffect(() => {
+    // Keeps screen readers and the browser's translate prompt in step with
+    // the language actually on screen.
+    document.documentElement.lang = language;
+  }, [language]);
 
   const value = useMemo<LanguageContextValue>(
     () => ({

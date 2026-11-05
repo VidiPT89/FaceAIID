@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { readStorage, writeStorage } from "@/lib/storage";
 
 interface DebugModeContextValue {
   debugMode: boolean;
@@ -23,13 +24,13 @@ export function DebugModeProvider({ children }: { children: React.ReactNode }) {
     // client-side, so the first render must match the server (off) before
     // this runs, avoiding a hydration mismatch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDebugMode(window.localStorage.getItem(STORAGE_KEY) === "1");
+    setDebugMode(readStorage(STORAGE_KEY) === "1");
   }, []);
 
   const toggle = () => {
     setDebugMode((prev) => {
       const next = !prev;
-      window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+      writeStorage(STORAGE_KEY, next ? "1" : "0");
       return next;
     });
   };

@@ -23,7 +23,10 @@ export async function getFaceLandmarker() {
         minFacePresenceConfidence: 0.4,
         minTrackingConfidence: 0.4,
       });
-    })();
+    })().catch((err) => {
+      landmarkerPromise = null;
+      throw err;
+    });
   }
   return landmarkerPromise;
 }
